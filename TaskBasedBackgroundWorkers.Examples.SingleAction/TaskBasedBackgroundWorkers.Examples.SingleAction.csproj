@@ -50,8 +50,12 @@
     <None Include="App.config" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\TaskBasedBackgroundWorkers.Examples.Common\TaskBasedBackgroundWorkers.Examples.Common.csproj">
+      <Project>{b7260ee5-7ab1-4ed0-97e7-f5be8c2ad17f}</Project>
+      <Name>TaskBasedBackgroundWorkers.Examples.Common</Name>
+    </ProjectReference>
     <ProjectReference Include="..\TaskBasedBackgroundWorkers\TaskBasedBackgroundWorkers.csproj">
-      <Project>{e5316854-f00d-4414-af2c-e02cd3ec51eb}</Project>
+      <Project>{E5316854-F00D-4414-AF2C-E02CD3EC51EB}</Project>
       <Name>TaskBasedBackgroundWorkers</Name>
     </ProjectReference>
   </ItemGroup>

@@ -4,10 +4,10 @@
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
-    <ProjectGuid>{F4698272-B106-4EC7-940E-2A52E6A88A4A}</ProjectGuid>
+    <ProjectGuid>{B7A08979-816E-41F1-8139-260046E466BC}</ProjectGuid>
     <OutputType>Exe</OutputType>
-    <RootNamespace>TaskBasedBackgroundWorkers.Examples.LongRunningLoop</RootNamespace>
-    <AssemblyName>TaskBasedBackgroundWorkers.Examples.LongRunningLoop</AssemblyName>
+    <RootNamespace>TaskBasedBackgroundWorkers.Examples.ProgressWorker</RootNamespace>
+    <AssemblyName>TaskBasedBackgroundWorkers.Examples.ProgressWorker</AssemblyName>
     <TargetFrameworkVersion>v4.8.1</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
@@ -55,7 +55,7 @@
       <Name>TaskBasedBackgroundWorkers.Examples.Common</Name>
     </ProjectReference>
     <ProjectReference Include="..\TaskBasedBackgroundWorkers\TaskBasedBackgroundWorkers.csproj">
-      <Project>{E5316854-F00D-4414-AF2C-E02CD3EC51EB}</Project>
+      <Project>{e5316854-f00d-4414-af2c-e02cd3ec51eb}</Project>
       <Name>TaskBasedBackgroundWorkers</Name>
     </ProjectReference>
   </ItemGroup>
