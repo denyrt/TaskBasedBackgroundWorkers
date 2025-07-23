@@ -1,5 +1,4 @@
-﻿using TaskBasedBackgroundWorkers.Helpers;
-using System;
+﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -35,6 +34,14 @@ namespace TaskBasedBackgroundWorkers
         /// </summary>
         public event EventHandler<TaskWorkerStoppedEventArgs> Stopped;
 
+        /// <summary>
+        /// Raises when task progress is adjusted.
+        /// </summary>
+        /// <remarks>
+        /// Could even not be raised (depends from impl of concreate worker).
+        /// </remarks>
+        public event EventHandler<TaskWorkerProgressChangedEventArgs> ProgressChanged;
+
         public TaskWorker(TaskScheduler taskScheduler, TaskCreationOptions taskCreationOptions)
         {
             _taskFactory = new TaskFactory(taskScheduler);
@@ -65,6 +72,15 @@ namespace TaskBasedBackgroundWorkers
         }
 
         /// <summary>
+        /// Raises <see cref="ProgressChanged"/> event.
+        /// </summary>
+        /// <param name="e"> Value of progress. </param>
+        protected virtual void OnProgressChanged(TaskWorkerProgressChangedEventArgs e)
+        {
+            ProgressChanged?.Invoke(this, e);
+        }
+
+        /// <summary>
         /// Work that is executed by worker on start.
         /// </summary>
         /// <param name="cancellationToken"> 
@@ -74,35 +90,6 @@ namespace TaskBasedBackgroundWorkers
         /// A task that represents async operation. 
         /// </returns>
         protected abstract Task DoWorkAsync(CancellationToken cancellationToken);
-
-        private async Task ExecuteDoWorkAsync(CancellationToken cancellationToken)
-        {
-            OnStarted(TaskWorkerStartedEventArgs.Empty);
-
-            bool isForcedStop = false;
-
-            try
-            {
-                await DoWorkAsync(cancellationToken).ConfigureAwait(false);
-            }
-            catch (TaskCanceledException) 
-            {
-                isForcedStop = true;
-            }
-            finally
-            {
-                ReleaseTaskResources();
-            }
-
-            if (isForcedStop)
-            {
-                OnStopped(TaskWorkerStoppedEventArgs.ForcedStop);
-            }
-            else
-            {
-                OnStopped(TaskWorkerStoppedEventArgs.Empty);
-            }
-        }
 
         /// <summary>
         /// Starts worker that executes <see cref="DoWorkAsync(CancellationToken)"/> once upon its run.
@@ -231,6 +218,35 @@ namespace TaskBasedBackgroundWorkers
             _task = _taskFactory.StartNew(func, ct, _taskCreationOptions, _taskFactory.Scheduler);
         }
 
+        private async Task ExecuteDoWorkAsync(CancellationToken cancellationToken)
+        {
+            OnStarted(TaskWorkerStartedEventArgs.Empty);
+
+            bool isForcedStop = false;
+
+            try
+            {
+                await DoWorkAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (TaskCanceledException)
+            {
+                isForcedStop = true;
+            }
+            finally
+            {
+                ReleaseTaskResources();
+            }
+
+            if (isForcedStop)
+            {
+                OnStopped(TaskWorkerStoppedEventArgs.ForcedStop);
+            }
+            else
+            {
+                OnStopped(TaskWorkerStoppedEventArgs.Empty);
+            }
+        }
+
         private void ReleaseCTS()
         {
             if (_cts != null)
@@ -242,7 +258,7 @@ namespace TaskBasedBackgroundWorkers
 
         private void ReleaseTask()
         {
-            if (TaskHelper.IsCouldBeDisposed(_task))
+            if (Helpers.TaskHelper.IsCouldBeDisposed(_task))
             {
                 _task.Dispose();
                 _task = null;
