@@ -18,7 +18,6 @@ namespace TaskBasedBackgroundWorkers
         private readonly SemaphoreSlim          _semaphoreSlim;
 
         private CancellationTokenSource         _cts;
-        private CancellationTokenRegistration[] _ctr;
         private Task                            _task;
 
         /// <summary>
@@ -225,9 +224,7 @@ namespace TaskBasedBackgroundWorkers
         private void CreateAndStartTask(CancellationTokenSource cts)
         {
             _cts = cts;
-            _ctr = new CancellationTokenRegistration[1];
-            _ctr[0] = _cts.Token.Register(ReleaseTaskResources);
-
+            
             var ct = _cts.Token;
             var func = new Action(async () => await ExecuteDoWorkAsync(ct));
 
@@ -243,19 +240,6 @@ namespace TaskBasedBackgroundWorkers
             }
         }
 
-        private void ReleaseCTR()
-        {
-            if (_ctr != null && _ctr.Length > 0)
-            {
-                for (int i = 0; i < _ctr.Length; ++i) 
-                {
-                    _ctr[i].Dispose();
-                }
-
-                _ctr = null;
-            }
-        }
-
         private void ReleaseTask()
         {
             if (TaskHelper.IsCouldBeDisposed(_task))
@@ -268,7 +252,6 @@ namespace TaskBasedBackgroundWorkers
         private void ReleaseTaskResources()
         {
             ReleaseCTS();
-            ReleaseCTR();
             ReleaseTask();
         }
 
