@@ -23,7 +23,10 @@ namespace TaskBasedBackgroundWorkers.Examples.ProgressWorker
                 Console.WriteLine("Press <Enter> to stop worker...");
                 Console.ReadLine();
 
-                taskWorker.Stop();
+                if (taskWorker.IsRunning)
+                {
+                    taskWorker.Stop();
+                }
 
                 Console.WriteLine("Press <Enter> to exit...");
                 Console.ReadLine();
