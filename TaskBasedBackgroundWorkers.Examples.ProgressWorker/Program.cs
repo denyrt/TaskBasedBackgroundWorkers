@@ -11,9 +11,26 @@ namespace TaskBasedBackgroundWorkers.Examples.ProgressWorker
 
         public static void Main()
         {
-            taskWorker.ProgressChanged += (s, e) => Console.WriteLine($"Work done for a '{e.Value}' points.");
-            taskWorker.Started += (s, e) => Console.WriteLine("Worker started!");
-            taskWorker.Stopped += (s, e) => Console.WriteLine("Worker stopped! [IsForced = {0}]", e.IsForcedStop);
+            taskWorker.ProgressChanged += (s, e) =>
+            {
+                Console.WriteLine("Work done for a '{0}' points.", e.Value);
+            };
+
+            taskWorker.ExceptionThrown += (s, e) =>
+            {
+                Console.WriteLine("Worker failed with exception: {0}", e.Exception);
+            };
+
+            taskWorker.Started += (s, e) =>
+            {
+                Console.WriteLine("Worker started!");
+            };
+
+            taskWorker.Stopped += (s, e) =>
+            {
+                Console.WriteLine("Worker stopped! [IsForced = {0}]", e.IsForcedStop);
+            };
+            
 
             using (taskWorker)
             {
@@ -44,6 +61,8 @@ namespace TaskBasedBackgroundWorkers.Examples.ProgressWorker
                 progress.Report(++i);
 
                 await Task.Delay(t, cancellationToken);
+
+                throw new Exception("ExampleException.");
             }
         }
     }

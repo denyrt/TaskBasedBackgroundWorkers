@@ -43,6 +43,11 @@ namespace TaskBasedBackgroundWorkers
         public event EventHandler<TaskWorkerProgressChangedEventArgs<TProgress>> ProgressChanged;
 
         /// <summary>
+        /// Raises when <see cref="DoWorkAsync(CancellationToken)"/> failed with unxpected exception.
+        /// </summary>
+        public event EventHandler<TaskWorkerExceptionEventArgs> ExceptionThrown;
+
+        /// <summary>
         /// Initializes new instance of <see cref="TaskWorker{TProgress}"/> using <see cref="TaskScheduler.Default"/> and <see cref="TaskCreationOptions.None"/> as parameters.
         /// </summary>
         public TaskWorker() : this(TaskScheduler.Default, TaskCreationOptions.None)
@@ -276,6 +281,10 @@ namespace TaskBasedBackgroundWorkers
             catch (TaskCanceledException)
             {
                 isForcedStop = true;
+            }
+            catch (Exception ex)
+            {
+                ExceptionThrown?.Invoke(this, new TaskWorkerExceptionEventArgs(ex));
             }
             finally
             {
