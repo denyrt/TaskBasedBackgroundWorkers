@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 
 namespace TaskBasedBackgroundWorkers.Examples.Common
 {
-    public sealed class RelayTaskWorker : TaskWorker
+    public sealed class RelayTaskWorker : TaskWorker<int>
     {
         private readonly Func<CancellationToken, Task> _doWork;
 

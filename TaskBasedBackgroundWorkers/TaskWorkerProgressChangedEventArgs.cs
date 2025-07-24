@@ -1,23 +1,15 @@
-﻿using System;
-
-namespace TaskBasedBackgroundWorkers
+﻿namespace TaskBasedBackgroundWorkers
 {
-    public sealed class TaskWorkerProgressChangedEventArgs : EventArgs
+    public class TaskWorkerProgressChangedEventArgs<TProgress> : System.EventArgs
     {
         /// <summary>
         /// Value of current progrees.
         /// </summary>
-        public int Progress { get; }
+        public TProgress Value { get; }
 
-        /// <summary>
-        /// Any data that could be associated with progress.
-        /// </summary>
-        public object Context { get; }
-
-        public TaskWorkerProgressChangedEventArgs(int progress, object context = null)
+        public TaskWorkerProgressChangedEventArgs(TProgress value)
         {
-            Progress = progress;
-            Context = context;
+            Value = value;
         }
     }
 }

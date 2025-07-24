@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -10,7 +12,8 @@ namespace TaskBasedBackgroundWorkers
     /// <remarks>
     /// Start and stop operations are sync with semaphore slim allowing only single thread perform start/stop at one moment of time.
     /// </remarks>
-    public abstract class TaskWorker : IDisposable
+    /// <typeparam name="TProgress"> Type that represents progress of worker do-work execution. </typeparam>
+    public abstract class TaskWorker<TProgress> : IDisposable
     {
         private readonly TaskFactory            _taskFactory;
         private readonly TaskCreationOptions    _taskCreationOptions;
@@ -37,47 +40,34 @@ namespace TaskBasedBackgroundWorkers
         /// <summary>
         /// Raises when task progress is adjusted.
         /// </summary>
-        /// <remarks>
-        /// Could even not be raised (depends from impl of concreate worker).
-        /// </remarks>
-        public event EventHandler<TaskWorkerProgressChangedEventArgs> ProgressChanged;
+        public event EventHandler<TaskWorkerProgressChangedEventArgs<TProgress>> ProgressChanged;
 
-        public TaskWorker(TaskScheduler taskScheduler, TaskCreationOptions taskCreationOptions)
-        {
-            _taskFactory = new TaskFactory(taskScheduler);
-            _taskCreationOptions = taskCreationOptions;
-            _semaphoreSlim = new SemaphoreSlim(1, 1);
-        }
-
-        /// <summary> 
-        /// Raises <see cref="Started"/> event.
+        /// <summary>
+        /// Initializes new instance of <see cref="TaskWorker{TProgress}"/> using <see cref="TaskScheduler.Default"/> and <see cref="TaskCreationOptions.None"/> as parameters.
         /// </summary>
-        /// <param name="e">
-        /// Args within event.
-        /// </param>
-        protected virtual void OnStarted(TaskWorkerStartedEventArgs e)
+        public TaskWorker() : this(TaskScheduler.Default, TaskCreationOptions.None)
         {
-            Started?.Invoke(this, e);
-        }
-
-        /// <summary> 
-        /// Raises <see cref="Stopped"/> event. 
-        /// </summary>
-        /// <param name="e">
-        /// Args within event.
-        /// </param>
-        protected virtual void OnStopped(TaskWorkerStoppedEventArgs e)
-        {
-            Stopped?.Invoke(this, e);
         }
 
         /// <summary>
-        /// Raises <see cref="ProgressChanged"/> event.
+        /// Initializes new instance of <see cref="TaskWorker{TProgress}"/> using custom <see cref="TaskScheduler"/> and <see cref="TaskCreationOptions"/>.
         /// </summary>
-        /// <param name="e"> Value of progress. </param>
-        protected virtual void OnProgressChanged(TaskWorkerProgressChangedEventArgs e)
+        /// <param name="taskScheduler"> Task scheduler that will be used within inner task factory. </param>
+        /// <param name="taskCreationOptions"> Options that will be used to run worker. </param>
+        public TaskWorker(TaskScheduler taskScheduler, TaskCreationOptions taskCreationOptions) : this(new TaskFactory(taskScheduler), taskCreationOptions)
         {
-            ProgressChanged?.Invoke(this, e);
+        }
+
+        /// <summary>
+        /// Initializes new instance of <see cref="TaskWorker{TProgress}"/> with custom <see cref="TaskFactory"/> and <see cref="TaskCreationOptions"/>.
+        /// </summary>
+        /// <param name="taskFactory"> Task factory that will be used to create tasks for worker. </param>
+        /// <param name="taskCreationOptions"> Options that will be used to run worker. </param>
+        public TaskWorker(TaskFactory taskFactory, TaskCreationOptions taskCreationOptions)
+        {
+            _taskFactory = taskFactory;
+            _taskCreationOptions = taskCreationOptions;
+            _semaphoreSlim = new SemaphoreSlim(1, 1);
         }
 
         /// <summary>
@@ -90,6 +80,61 @@ namespace TaskBasedBackgroundWorkers
         /// A task that represents async operation. 
         /// </returns>
         protected abstract Task DoWorkAsync(CancellationToken cancellationToken);
+
+        /// <summary> 
+        /// Raises <see cref="Started"/> event.
+        /// </summary>
+        /// <param name="e"> Args within event. </param>
+        protected virtual void OnStarted(TaskWorkerStartedEventArgs e)
+        {
+            Started?.Invoke(this, e);
+        }
+
+        /// <summary> 
+        /// Raises <see cref="Stopped"/> event. 
+        /// </summary>
+        /// <param name="e"> Args within event. </param>
+        protected virtual void OnStopped(TaskWorkerStoppedEventArgs e)
+        {
+            Stopped?.Invoke(this, e);
+        }
+
+        /// <summary>
+        /// Raises <see cref="ProgressChanged"/> event.
+        /// </summary>
+        /// <param name="e"> Value of progress. </param>
+        protected virtual void OnProgressChanged(TaskWorkerProgressChangedEventArgs<TProgress> e)
+        {
+            ProgressChanged?.Invoke(this, e);
+        }
+
+        public void Start(CancellationToken linkedToken = default)
+        {
+            var tokens = new CancellationToken[1] { linkedToken };
+
+            try
+            {
+                Start(tokens);
+            }
+            catch (InvalidOperationException ex) 
+            {
+                throw ex;
+            }
+        }
+
+        public void Start(IEnumerable<CancellationToken> linkedTokens)
+        {
+            var tokens = linkedTokens.ToArray();
+
+            try
+            {
+                Start(tokens);
+            }
+            catch (InvalidOperationException ex)
+            {
+                throw ex;
+            }
+        }
 
         /// <summary>
         /// Starts worker that executes <see cref="DoWorkAsync(CancellationToken)"/> once upon its run.

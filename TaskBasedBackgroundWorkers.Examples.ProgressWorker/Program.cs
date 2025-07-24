@@ -2,7 +2,6 @@
 using System.Threading;
 using System.Threading.Tasks;
 using TaskBasedBackgroundWorkers.Examples.Common;
-using TaskBasedBackgroundWorkers.Extensions;
 
 namespace TaskBasedBackgroundWorkers.Examples.ProgressWorker
 {
@@ -12,9 +11,9 @@ namespace TaskBasedBackgroundWorkers.Examples.ProgressWorker
 
         public static void Main()
         {
-            taskWorker.ProgressChanged += (s, e) => Console.WriteLine($"Work done for a '{e.Progress}' points.");
+            taskWorker.ProgressChanged += (s, e) => Console.WriteLine($"Work done for a '{e.Value}' points.");
             taskWorker.Started += (s, e) => Console.WriteLine("Worker started!");
-            taskWorker.Stopped += (s, e) => Console.WriteLine("Worker stopped!");
+            taskWorker.Stopped += (s, e) => Console.WriteLine("Worker stopped! [IsForced = {0}]", e.IsForcedStop);
 
             using (taskWorker)
             {
@@ -36,14 +35,15 @@ namespace TaskBasedBackgroundWorkers.Examples.ProgressWorker
         private static async Task DoWorkAsync(IProgress<int> progress, CancellationToken cancellationToken = default)
         {
             var t = TimeSpan.FromMilliseconds(500);
+            int i = 0;
 
-            for (int i = 0; i < 10; i++)
+            while (i < 10 && !cancellationToken.IsCancellationRequested)
             {
                 await Console.Out.WriteLineAsync($"{Guid.NewGuid():n} calculated");
 
-                progress.Report(i + 1);
+                progress.Report(++i);
 
-                await Task.Delay(t);
+                await Task.Delay(t, cancellationToken);
             }
         }
     }
