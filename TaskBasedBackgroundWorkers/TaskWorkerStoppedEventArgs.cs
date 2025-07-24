@@ -6,8 +6,7 @@
         /// A state that describes how worker was finished.
         /// </summary>
         /// <remarks>
-        /// You usually want procudes something like 'Finished' if value is <see langword="false"/> 
-        /// otherwise produce something like 'Cancelled'.
+        /// You usually want procudes something like 'Finished' if value is <see langword="false"/> otherwise produce something like 'Cancelled'.
         /// </remarks>
         public bool IsForcedStop { get; }
 

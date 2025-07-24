@@ -320,6 +320,7 @@ namespace TaskBasedBackgroundWorkers
         {
             Started = null;
             Stopped = null;
+            ProgressChanged = null;
         }
 
         protected virtual void Dispose(bool disposing)
