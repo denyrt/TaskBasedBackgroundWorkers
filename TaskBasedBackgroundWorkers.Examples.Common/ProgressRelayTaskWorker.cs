@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 
 namespace TaskBasedBackgroundWorkers.Examples.Common
 {
-    public sealed class ProgressRelayTaskWorker : TaskWorker
+    public sealed class ProgressRelayTaskWorker : ExampleTaskWorker
     {
         private readonly Func<IProgress<int>, CancellationToken, Task> _doWork;
 
@@ -36,7 +36,7 @@ namespace TaskBasedBackgroundWorkers.Examples.Common
 
         private void Progress_ProgressChanged(object sender, int e)
         {
-            OnProgressChanged(new TaskWorkerProgressChangedEventArgs(e));
+            OnProgressChanged(new TaskWorkerProgressChangedEventArgs<int>(e));
         }
     }
 }

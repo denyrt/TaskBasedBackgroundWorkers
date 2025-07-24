@@ -2,7 +2,6 @@
 using System.Threading;
 using System.Threading.Tasks;
 using TaskBasedBackgroundWorkers.Examples.Common;
-using TaskBasedBackgroundWorkers.Extensions;
 
 namespace TaskBasedBackgroundWorkers.Examples.SingleAction
 {
