@@ -1,8 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
-using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -34,7 +32,7 @@ namespace TaskBasedBackgroundWorkers
         // The underlying creation options.
         private readonly TaskCreationOptions _taskCreationOptions;
 
-        // The semaphore for concurrent sync of underlying task setup/clean-up.
+        // The synchronization of underlying task setup/clean-up to prevent concurrent changes of its state.
         private readonly SemaphoreSlim _semaphoreSlim;
 
         // The underlying cancellation source.
@@ -60,7 +58,7 @@ namespace TaskBasedBackgroundWorkers
         /// Raises when worker is stopped.
         /// </summary>
         /// <remarks>
-        /// The underlying task and its resources are cleaned-up at moment when this event is raised. So new task can be safety sheldured for execution.
+        /// The underlying task and its resources are cleaned-up already when this event is raised.
         /// </remarks>
         public event EventHandler<TaskWorkerStoppedEventArgs> Stopped;
 
@@ -72,6 +70,9 @@ namespace TaskBasedBackgroundWorkers
         /// <summary>
         /// Raises when do-work method failed with unxpected exception.
         /// </summary>
+        /// <remarks>
+        /// The underlying task and its resources are cleaned-up already when this event is raised.
+        /// </remarks>
         public event EventHandler<TaskWorkerExceptionEventArgs> ExceptionThrown;
 
         /// <summary>
@@ -114,13 +115,16 @@ namespace TaskBasedBackgroundWorkers
         /// <summary>
         /// Work that is executed by worker on start.
         /// </summary>
+        /// <param name="progress">
+        /// A progress that could be used to raise <see cref="ProgressChanged"/>. Its life-time is bound to task-associated resources.
+        /// </param>
         /// <param name="cancellationToken"> 
         /// Cancellation token provided by worker.
         /// </param>
         /// <returns> 
         /// A task that represents async operation. 
         /// </returns>
-        protected abstract Task DoWorkAsync(CancellationToken cancellationToken);
+        protected abstract Task DoWorkAsync(IProgress<TProgress> progress, CancellationToken cancellationToken);
 
         /// <summary> 
         /// Raises <see cref="Started"/> event.
@@ -150,7 +154,7 @@ namespace TaskBasedBackgroundWorkers
         /// Raises <see cref="ProgressChanged"/> event.
         /// </summary>
         /// <param name="e"> Value of progress. </param>
-        protected virtual void OnProgressChanged(TaskWorkerProgressChangedEventArgs<TProgress> e)
+        private void OnProgressChanged(TaskWorkerProgressChangedEventArgs<TProgress> e)
         {
             ProgressChanged?.Invoke(this, e);
         }
@@ -317,8 +321,13 @@ namespace TaskBasedBackgroundWorkers
 
             try
             {
-                await DoWorkAsync(cancellationToken).ConfigureAwait(false);
+                using (var progress = TaskWorkerProgress<TProgress>.FromHandler(OnProgressChanged))
+                {
+                    await DoWorkAsync(progress, cancellationToken).ConfigureAwait(false);
+                }
+
                 CleanupTaskResources();
+
                 OnStopped(TaskWorkerStoppedEventArgs.Finished);
             }
             catch (TaskCanceledException)
@@ -328,7 +337,9 @@ namespace TaskBasedBackgroundWorkers
             catch (Exception ex)
             {
                 CleanupTaskResources();
+
                 OnExceptionThrown(new TaskWorkerExceptionEventArgs(ex));
+                
                 OnStopped(TaskWorkerStoppedEventArgs.Exception);
             }
         }
