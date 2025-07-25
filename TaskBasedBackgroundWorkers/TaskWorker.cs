@@ -327,7 +327,7 @@ namespace TaskBasedBackgroundWorkers
                 }
                 finally
                 {
-                    ReleaseTaskResources();
+                    CleanupTaskResources();
                 }
                 
                 OnStopped(TaskWorkerStoppedEventArgs.Finished);
@@ -343,7 +343,7 @@ namespace TaskBasedBackgroundWorkers
             }
         }
 
-        private void ReleaseCTS()
+        private void CleanupCTS()
         {
             if (_cts != null)
             {
@@ -352,7 +352,7 @@ namespace TaskBasedBackgroundWorkers
             }
         }
 
-        private void ReleaseTask()
+        private void CleanupTask()
         {
             if (_task != null)
             {
@@ -365,20 +365,21 @@ namespace TaskBasedBackgroundWorkers
             }
         }
 
-        private void ReleaseTaskResources()
+        private void CleanupTaskResources()
         {
-            ReleaseCTS();
-            ReleaseTask();
+            CleanupCTS();
+            CleanupTask();
         }
 
-        private void ReleaseEvents()
+        private void CleanupEvents()
         {
             Started = null;
             Stopped = null;
             ProgressChanged = null;
+            ExceptionThrown = null;
         }
 
-        private void ReleaseInstance()
+        private void CleanupInstance()
         {
             _semaphoreSlim.Dispose();
         }
@@ -387,9 +388,9 @@ namespace TaskBasedBackgroundWorkers
         {
             if (disposing)
             {
-                ReleaseTaskResources();
-                ReleaseEvents();
-                ReleaseInstance();
+                CleanupTaskResources();
+                CleanupEvents();
+                CleanupInstance();
             }
         }
 
