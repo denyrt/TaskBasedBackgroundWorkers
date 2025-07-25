@@ -17,9 +17,9 @@ namespace TaskBasedBackgroundWorkers.Examples.LongRunningLoop
                 {
                     worker.Stop();
                 }
-
-                ConsoleExtensions.ReadEnter("Press <Enter> to exit...");
             }
+
+            ConsoleExtensions.ReadEnter("Press <Enter> to exit...");
         }
     }
 }

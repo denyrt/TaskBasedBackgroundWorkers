@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -102,6 +104,8 @@ namespace TaskBasedBackgroundWorkers
         /// </remarks>
         public TaskWorker(TaskFactory taskFactory, TaskCreationOptions taskCreationOptions)
         {
+            DebugEnter();
+
             if (taskFactory.Scheduler == null)
             {
                 throw new ArgumentException($"Cannot accept task factory without scheduler.", nameof(taskFactory.Scheduler));
@@ -110,6 +114,8 @@ namespace TaskBasedBackgroundWorkers
             _taskFactory = taskFactory;
             _taskCreationOptions = taskCreationOptions;
             _semaphoreSlim = new SemaphoreSlim(1, 1);
+
+            DebugExit();
         }
 
         /// <summary>
@@ -135,7 +141,11 @@ namespace TaskBasedBackgroundWorkers
         /// </remarks>
         private void OnStarted(TaskWorkerStartedEventArgs e)
         {
+            DebugEnter();
+
             Started?.Invoke(this, e);
+
+            DebugExit();
         }
 
         /// <summary> 
@@ -147,7 +157,11 @@ namespace TaskBasedBackgroundWorkers
         /// </remarks>
         private void OnStopped(TaskWorkerStoppedEventArgs e)
         {
+            DebugEnter();
+
             Stopped?.Invoke(this, e);
+
+            DebugExit();
         }
 
         /// <summary>
@@ -156,7 +170,11 @@ namespace TaskBasedBackgroundWorkers
         /// <param name="e"> Value of progress. </param>
         private void OnProgressChanged(TaskWorkerProgressChangedEventArgs<TProgress> e)
         {
+            DebugEnter();
+
             ProgressChanged?.Invoke(this, e);
+
+            DebugExit();
         }
 
         /// <summary>
@@ -168,7 +186,11 @@ namespace TaskBasedBackgroundWorkers
         /// </remarks>
         private void OnExceptionThrown(TaskWorkerExceptionEventArgs e)
         {
+            DebugEnter();
+
             ExceptionThrown?.Invoke(this, e);
+
+            DebugExit();
         }
 
         /// <summary>
@@ -186,7 +208,7 @@ namespace TaskBasedBackgroundWorkers
             {
                 Start(tokens);
             }
-            catch (InvalidOperationException ex) 
+            catch (InvalidOperationException ex)
             {
                 throw ex;
             }
@@ -231,7 +253,7 @@ namespace TaskBasedBackgroundWorkers
             {
                 throw new InvalidOperationException($"Array '{linkedTokens}' cannot be empty.");
             }
-            
+
             _semaphoreSlim.Wait();
 
             try
@@ -339,7 +361,7 @@ namespace TaskBasedBackgroundWorkers
                 CleanupTaskResources();
 
                 OnExceptionThrown(new TaskWorkerExceptionEventArgs(ex));
-                
+
                 OnStopped(TaskWorkerStoppedEventArgs.Exception);
             }
         }
@@ -381,10 +403,12 @@ namespace TaskBasedBackgroundWorkers
         // Organized clean-up of task associated resources.
         private void CleanupTaskResources()
         {
-            _semaphoreSlim.Wait();
+            DebugEnter();
 
             try
             {
+                _semaphoreSlim.Wait();
+
                 CleanupCTR();
                 CleanupCTS();
                 CleanupTask();
@@ -393,31 +417,45 @@ namespace TaskBasedBackgroundWorkers
             {
                 _semaphoreSlim.Release();
             }
+
+            DebugExit();
         }
 
         // Organized clean-up of exposed event handlers.
         private void CleanupEvents()
         {
+            DebugEnter();
+
             Started = null;
             Stopped = null;
             ProgressChanged = null;
             ExceptionThrown = null;
+
+            DebugExit();
         }
 
         // Organized clean-up of other underlying objects.
         private void CleanupInstance()
         {
+            DebugEnter();
+
             _semaphoreSlim.Dispose();
+
+            DebugExit();
         }
 
         protected virtual void Dispose(bool disposing)
         {
+            DebugEnter();
+
             if (disposing)
             {
                 CleanupTaskResources();
                 CleanupEvents();
                 CleanupInstance();
             }
+
+            DebugExit();
         }
 
         /// <summary>
@@ -425,8 +463,30 @@ namespace TaskBasedBackgroundWorkers
         /// </summary>
         public void Dispose()
         {
+            DebugEnter();
+
             Dispose(true);
             GC.SuppressFinalize(this);
+
+            DebugExit();
+        }
+
+        [Conditional("DEBUG")]
+        private static void Debug(string message, [CallerMemberName] string callerName = null)
+        {
+            System.Diagnostics.Debug.WriteLine($"{callerName} | {message}", $"{typeof(TaskWorker<>)}");
+        }
+
+        [Conditional("DEBUG")]
+        private static void DebugEnter([CallerMemberName] string callerName = null)
+        {
+            Debug("Enter.", callerName);
+        }
+
+        [Conditional("DEBUG")]
+        private static void DebugExit([CallerMemberName] string callerName = null)
+        {
+            Debug("Exit.", callerName);
         }
     }
 }
