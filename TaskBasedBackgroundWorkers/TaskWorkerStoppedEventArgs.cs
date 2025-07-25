@@ -5,18 +5,34 @@
         /// <summary>
         /// A state that describes how worker was finished.
         /// </summary>
-        /// <remarks>
-        /// You usually want procudes something like 'Finished' if value is <see langword="false"/> otherwise produce something like 'Cancelled'.
-        /// </remarks>
-        public bool IsForcedStop { get; }
+        public TaskWorkerStopReason StopReason { get; }
 
-        public TaskWorkerStoppedEventArgs(bool isForceStop)
+        public TaskWorkerStoppedEventArgs(TaskWorkerStopReason stopReason)
         {
-            IsForcedStop = isForceStop;
+            StopReason = stopReason;
         }
 
-        public new static readonly TaskWorkerStoppedEventArgs Empty = new TaskWorkerStoppedEventArgs(isForceStop: false);
-        
-        public static readonly TaskWorkerStoppedEventArgs ForcedStop = new TaskWorkerStoppedEventArgs(isForceStop: true);
+        /// <summary>
+        /// A reserved instance that describes empty state of <see cref="TaskWorkerStoppedEventArgs"/>.
+        /// </summary>
+        /// <remarks>
+        /// Notice that <see cref="StopReason"/> assigned to <see cref="TaskWorkerStopReason.None"/>.
+        /// </remarks>
+        public new static readonly TaskWorkerStoppedEventArgs Empty = new TaskWorkerStoppedEventArgs(TaskWorkerStopReason.None);
+
+        /// <summary>
+        /// An reserved instance that describes successful execution of task worker.
+        /// </summary>
+        public static readonly TaskWorkerStoppedEventArgs Finished = new TaskWorkerStoppedEventArgs(TaskWorkerStopReason.Finished);
+
+        /// <summary>
+        /// An reserved instance that describes forced stop of worker by cancellation request.
+        /// </summary>
+        public static readonly TaskWorkerStoppedEventArgs Cancelled = new TaskWorkerStoppedEventArgs(TaskWorkerStopReason.Cancelled);
+
+        /// <summary>
+        /// An reserved instance that describes stopping of worker due to unhandled exception.
+        /// </summary>
+        public static readonly TaskWorkerStoppedEventArgs Exception = new TaskWorkerStoppedEventArgs(TaskWorkerStopReason.Exception);
     }
 }

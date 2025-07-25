@@ -2,43 +2,44 @@
 using System.Threading;
 using System.Threading.Tasks;
 using TaskBasedBackgroundWorkers.Examples.Common;
+using TaskBasedBackgroundWorkers.Examples.Common.Helpers;
 
 namespace TaskBasedBackgroundWorkers.Examples.LongRunningLoop
 {
     public sealed class Program
     {
-        private static readonly RelayTaskWorker taskWorker = new RelayTaskWorker(DoWorkAsync, TaskScheduler.Default, TaskCreationOptions.LongRunning);
-
         public static void Main()
         {
-            taskWorker.Started += (s, e) => Console.WriteLine("Long running worker started!");
-            taskWorker.Stopped += (s, e) => Console.WriteLine("Long running worker stopped! [IsForced = {0}]", e.IsForcedStop);
-            
-            using (taskWorker)
+            EmulationOfLongRunningLoopTask();
+        }
+
+        private static void EmulationOfLongRunningLoopTask()
+        {
+            using (var worker = new RelayTaskWorker(DoWorkAsync, TaskScheduler.Default, TaskCreationOptions.LongRunning))
             {
-                taskWorker.Start();
+                worker.EnableConsoleOut();
+                worker.Start();
 
-                Console.WriteLine("Press <Enter> to stop worker...");
-                Console.ReadLine();
+                ConsoleHelper.ReadInputLine("Press <Enter> to stop worker...");
 
-                if (taskWorker.IsRunning)
+                if (worker.IsRunning)
                 {
-                    taskWorker.Stop();
+                    worker.Stop();
                 }
 
-                Console.WriteLine("Press <Enter> to exit...");
-                Console.ReadLine();
+                ConsoleHelper.ReadInputLine("Press <Enter> to exit...");
             }
         }
 
-        private static async Task DoWorkAsync(CancellationToken cancellationToken = default)
+        private static async Task DoWorkAsync(RelayTaskWorker worker, CancellationToken cancellationToken = default)
         {
-            var t = TimeSpan.FromSeconds(1);
+            var timeSpan = TimeSpan.FromSeconds(1);
 
             while (!cancellationToken.IsCancellationRequested)
             {
-                await Console.Out.WriteLineAsync($"{Guid.NewGuid():n} Do Work Till Cancel...");
-                await Task.Delay(t, cancellationToken);
+                await ConsoleHelper.LogToConsoleOutAsync($"(hash: {worker.GetHashCode()}) [do work {Guid.NewGuid():n}]");
+
+                await Task.Delay(timeSpan, cancellationToken);
             }
         }
     }

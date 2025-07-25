@@ -2,46 +2,47 @@
 using System.Threading;
 using System.Threading.Tasks;
 using TaskBasedBackgroundWorkers.Examples.Common;
+using TaskBasedBackgroundWorkers.Examples.Common.Helpers;
 
 namespace TaskBasedBackgroundWorkers.Examples.SingleAction
 {
     public sealed class Program
     {
-        private static readonly RelayTaskWorker worker = new RelayTaskWorker(DoWorkAsync, TaskScheduler.Default, TaskCreationOptions.None);
-
         public static void Main()
         {
-            worker.Started += (s, e) => Console.WriteLine("Worker started!");
-            worker.Stopped += (s, e) => Console.WriteLine("Worker stopped! [IsForced = {0}]", e.IsForcedStop);
+            EmulationOfSingleActionTask();
+        }
 
-            using (worker)
+        private static void EmulationOfSingleActionTask()
+        {
+            using (var worker = new RelayTaskWorker(DoWorkAsync, TaskScheduler.Default, TaskCreationOptions.None))
             {
+                worker.EnableConsoleOut();
                 worker.Start();
 
-                Console.WriteLine("Press <Enter> to stop worker if it is still running...");
-                Console.ReadLine();
+                ConsoleHelper.ReadInputLine("Press <Enter> to stop worker if it is still running...");
 
                 if (worker.IsRunning)
                 {
                     worker.Stop();
                 }
 
-                Console.WriteLine("Press <Enter> to exit...");
-                Console.ReadLine();
+                ConsoleHelper.ReadInputLine("Press <Enter> to exit...");
             }
         }
 
-        private static async Task DoWorkAsync(CancellationToken cancellationToken = default)
+        private static async Task DoWorkAsync(RelayTaskWorker worker, CancellationToken cancellationToken = default)
         {
-            var i = 0;
-            var t = TimeSpan.FromSeconds(1);
+            var index = 0;
+            var timeSpan = TimeSpan.FromSeconds(1);
 
-            while (i < 5 && !cancellationToken.IsCancellationRequested)
+            while (index < 5 && !cancellationToken.IsCancellationRequested)
             {
-                await Console.Out.WriteLineAsync($"{Guid.NewGuid():n} Hello, DoWork!");
-                await Task.Delay(t, cancellationToken);
+                await ConsoleHelper.LogToConsoleOutAsync($"(hash: {worker.GetHashCode()}) [do work {Guid.NewGuid():n}]");
+                
+                await Task.Delay(timeSpan, cancellationToken);
 
-                ++i;
+                ++index;
             }
         }
     }
