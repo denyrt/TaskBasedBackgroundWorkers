@@ -4,12 +4,13 @@ using System.Threading.Tasks;
 
 namespace TaskBasedBackgroundWorkers.Examples.Common
 {
+    // ToDo: a bit refactor this example (not best way to impl relay worker).
     public sealed class ProgressRelayTaskWorker : ExampleTaskWorker
     {
-        private readonly Func<IProgress<int>, CancellationToken, Task> _doWork;
+        private readonly Func<IProgress<int>, ProgressRelayTaskWorker, CancellationToken, Task> _doWork;
 
         public ProgressRelayTaskWorker(
-            Func<IProgress<int>, CancellationToken, Task> doWork,
+            Func<IProgress<int>, ProgressRelayTaskWorker, CancellationToken, Task> doWork,
             TaskScheduler taskScheduler, 
             TaskCreationOptions taskCreationOptions
         ) 
@@ -25,7 +26,7 @@ namespace TaskBasedBackgroundWorkers.Examples.Common
 
             try
             {
-                await _doWork.Invoke(progress, cancellationToken).ConfigureAwait(false);
+                await _doWork.Invoke(progress, this, cancellationToken).ConfigureAwait(false);
             }
             finally
             {

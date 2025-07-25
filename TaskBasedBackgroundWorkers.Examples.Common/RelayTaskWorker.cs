@@ -4,12 +4,13 @@ using System.Threading.Tasks;
 
 namespace TaskBasedBackgroundWorkers.Examples.Common
 {
-    public sealed class RelayTaskWorker : TaskWorker<int>
+    // ToDo: a bit refactor this example (not best way to impl relay worker).
+    public sealed class RelayTaskWorker : ExampleTaskWorker
     {
-        private readonly Func<CancellationToken, Task> _doWork;
+        private readonly Func<RelayTaskWorker, CancellationToken, Task> _doWork;
 
         public RelayTaskWorker(
-            Func<CancellationToken, Task> doWork,
+            Func<RelayTaskWorker, CancellationToken, Task> doWork,
             TaskScheduler taskScheduler,
             TaskCreationOptions taskCreationOptions
         )
@@ -20,7 +21,7 @@ namespace TaskBasedBackgroundWorkers.Examples.Common
 
         protected override async Task DoWorkAsync(CancellationToken cancellationToken)
         {
-            await _doWork.Invoke(cancellationToken).ConfigureAwait(false);
+            await _doWork.Invoke(this, cancellationToken).ConfigureAwait(false);
         }
     }
 }

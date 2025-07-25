@@ -48,6 +48,7 @@
   <ItemGroup>
     <Compile Include="Helpers\TaskHelper.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="TaskWorkerStopReason.cs" />
     <Compile Include="TaskWorker.cs" />
     <Compile Include="TaskWorkerExceptionEventArgs.cs" />
     <Compile Include="TaskWorkerProgressChangedEventArgs.cs" />

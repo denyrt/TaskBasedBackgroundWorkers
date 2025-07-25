@@ -2,68 +2,76 @@
 using System.Threading;
 using System.Threading.Tasks;
 using TaskBasedBackgroundWorkers.Examples.Common;
+using TaskBasedBackgroundWorkers.Examples.Common.Helpers;
 
 namespace TaskBasedBackgroundWorkers.Examples.ProgressWorker
 {
     public sealed class Program
     {
-        private static readonly ProgressRelayTaskWorker taskWorker = new ProgressRelayTaskWorker(DoWorkAsync, TaskScheduler.Default, TaskCreationOptions.None);
-
         public static void Main()
         {
-            taskWorker.ProgressChanged += (s, e) =>
+            EmulationOfProgressTask();
+        }
+
+        private static void EmulationOfProgressTask()
+        {
+            using (var worker = new ProgressRelayTaskWorker(DoWorkAsync, TaskScheduler.Default, TaskCreationOptions.None))
             {
-                Console.WriteLine("Work done for a '{0}' points.", e.Value);
-            };
+                worker.EnableConsoleOut();
+                worker.Start();
 
-            taskWorker.ExceptionThrown += (s, e) =>
-            {
-                Console.WriteLine("Worker failed with exception: {0}", e.Exception);
-            };
-
-            taskWorker.Started += (s, e) =>
-            {
-                Console.WriteLine("Worker started!");
-            };
-
-            taskWorker.Stopped += (s, e) =>
-            {
-                Console.WriteLine("Worker stopped! [IsForced = {0}]", e.IsForcedStop);
-            };
-            
-
-            using (taskWorker)
-            {
-                taskWorker.Start();
-
-                Console.WriteLine("Press <Enter> to stop worker...");
-                Console.ReadLine();
-
-                if (taskWorker.IsRunning)
+                ConsoleHelper.ReadInputLine("Press <Enter> to stop worker...");
+                
+                if (worker.IsRunning)
                 {
-                    taskWorker.Stop();
+                    worker.Stop();
                 }
 
-                Console.WriteLine("Press <Enter> to exit...");
-                Console.ReadLine();
+                ConsoleHelper.ReadInputLine("Press <Enter> to exit...");
             }
         }
 
-        private static async Task DoWorkAsync(IProgress<int> progress, CancellationToken cancellationToken = default)
+        private static async Task DoWorkAsync(IProgress<int> progress, ProgressRelayTaskWorker worker, CancellationToken cancellationToken = default)
         {
-            var t = TimeSpan.FromMilliseconds(500);
-            int i = 0;
+            var random = new Random();
+            var timeSpan = TimeSpan.FromMilliseconds(1500);
+            int index = 0;
+            int count = 10;
 
-            while (i < 10 && !cancellationToken.IsCancellationRequested)
+            while (index < count && !cancellationToken.IsCancellationRequested)
             {
-                await Console.Out.WriteLineAsync($"{Guid.NewGuid():n} calculated");
+                try
+                {
+                    await ConsoleHelper.LogToConsoleOutAsync($"(hash: {worker.GetHashCode()}) [do work {Guid.NewGuid():n}]");
+                    
+                    progress.Report(index);
 
-                progress.Report(++i);
+                    if (random.Next(0, count) < index)
+                    {
+                        MethodThatThrowsExpectedException();
+                    }
+                    
+                    if (index == count)
+                    {
+                        throw new Exception("Critical failure");
+                    }
+                }
+                catch (NotSupportedException ex) 
+                {
+                    await ConsoleHelper.LogToConsoleOutAsync($"(hash: {worker.GetHashCode()}) [{ex.Message}]");
+                }
+                finally
+                {
+                    ++index;
+                }
 
-                await Task.Delay(t, cancellationToken);
-
-                throw new Exception("ExampleException.");
+                await Task.Delay(timeSpan, cancellationToken);
             }
+        }
+
+        private static void MethodThatThrowsExpectedException()
+        {
+            throw new NotSupportedException("some handled excetion");
         }
     }
 }

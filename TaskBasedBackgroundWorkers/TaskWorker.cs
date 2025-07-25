@@ -7,10 +7,20 @@ using System.Threading.Tasks;
 namespace TaskBasedBackgroundWorkers
 {
     /// <summary>
-    /// A base type for a thread-safe worker that supports stop using its own stop method or via external <see cref="CancellationToken"/>.
+    /// A base type for a thread-safe re-runnable worker that supports stop using its own stop method or via external <see cref="CancellationToken"/>.
     /// </summary>
     /// <remarks>
-    /// Start and stop operations are sync with semaphore slim allowing only single thread perform start/stop at one moment of time.
+    /// A few notes:
+    /// <list type="bullet">
+    /// Worker could be re-start again if <see cref="IsRunning"/> is <see langword="false"/>.
+    /// </list>
+    /// <list type="bullet"> 
+    /// All start and stop methods are concurrent synchronized in way that only a of these method could be executed at one moment of time.
+    /// </list>
+    /// <list type="bullet">
+    /// Worker stopping using external <see cref="CancellationToken"/> shares the same synchronized behaivour with start and stop methods.
+    /// So external call cancellationTokenSource.Cancel() will not be performed in one moment of time with start and stop methods.
+    /// </list>
     /// </remarks>
     /// <typeparam name="TProgress"> Type that represents progress of worker do-work execution. </typeparam>
     public abstract class TaskWorker<TProgress> : IDisposable
@@ -43,7 +53,7 @@ namespace TaskBasedBackgroundWorkers
         public event EventHandler<TaskWorkerProgressChangedEventArgs<TProgress>> ProgressChanged;
 
         /// <summary>
-        /// Raises when <see cref="DoWorkAsync(CancellationToken)"/> failed with unxpected exception.
+        /// Raises when do-work method failed with unxpected exception.
         /// </summary>
         public event EventHandler<TaskWorkerExceptionEventArgs> ExceptionThrown;
 
@@ -68,8 +78,17 @@ namespace TaskBasedBackgroundWorkers
         /// </summary>
         /// <param name="taskFactory"> Task factory that will be used to create tasks for worker. </param>
         /// <param name="taskCreationOptions"> Options that will be used to run worker. </param>
+        /// <exception cref="ArgumentException"></exception>
+        /// <remarks>
+        /// <paramref name="taskFactory"/> must have not null <see cref="TaskScheduler"/>
+        /// </remarks>
         public TaskWorker(TaskFactory taskFactory, TaskCreationOptions taskCreationOptions)
         {
+            if (taskFactory.Scheduler == null)
+            {
+                throw new ArgumentException($"Cannot accept task factory without scheduler.", nameof(taskFactory.Scheduler));
+            }
+
             _taskFactory = taskFactory;
             _taskCreationOptions = taskCreationOptions;
             _semaphoreSlim = new SemaphoreSlim(1, 1);
@@ -90,6 +109,9 @@ namespace TaskBasedBackgroundWorkers
         /// Raises <see cref="Started"/> event.
         /// </summary>
         /// <param name="e"> Args within event. </param>
+        /// <remarks>
+        /// Called right before <see cref="DoWorkAsync(CancellationToken)"/>. Inner task is already running at moment of this call and <see cref="IsRunning"/> is <see langword="true"/>.
+        /// </remarks>
         protected virtual void OnStarted(TaskWorkerStartedEventArgs e)
         {
             Started?.Invoke(this, e);
@@ -99,6 +121,9 @@ namespace TaskBasedBackgroundWorkers
         /// Raises <see cref="Stopped"/> event. 
         /// </summary>
         /// <param name="e"> Args within event. </param>
+        /// <remarks>
+        /// Called when <see cref="DoWorkAsync(CancellationToken)"/> finished execution.
+        /// </remarks>
         protected virtual void OnStopped(TaskWorkerStoppedEventArgs e)
         {
             Stopped?.Invoke(this, e);
@@ -111,6 +136,18 @@ namespace TaskBasedBackgroundWorkers
         protected virtual void OnProgressChanged(TaskWorkerProgressChangedEventArgs<TProgress> e)
         {
             ProgressChanged?.Invoke(this, e);
+        }
+
+        /// <summary>
+        /// Raises <see cref="ExceptionThrown"/> event.
+        /// </summary>
+        /// <param name="e"></param>
+        /// <remarks>
+        /// Called when <see cref="DoWorkAsync(CancellationToken)"/> fault with unhandled exception.
+        /// </remarks>
+        protected virtual void OnExceptionThrown(TaskWorkerExceptionEventArgs e)
+        {
+            ExceptionThrown?.Invoke(this, e);
         }
 
         public void Start(CancellationToken linkedToken = default)
@@ -175,19 +212,23 @@ namespace TaskBasedBackgroundWorkers
         }
 
         /// <summary>
-        /// Starts worker that executes <see cref="DoWorkAsync(CancellationToken)"/> once upon its run.
+        /// Starts worker making it execute do-work once upon its run.
         /// </summary>
         /// <param name="linkedTokens">
         /// A bunch of bound cancellation tokens. Cancellation request from one of these tokens will lead to stop of current worker. 
         /// </param>
         /// <param name="cancellationToken"> 
-        /// Cancellation token to cancel starting of worker. 
+        /// Cancellation token that could be used to cancel starting of worker. 
         /// </param>
         /// <exception cref="InvalidOperationException"></exception>
+        /// <remarks>
+        /// Current method not waits for task-worker execution. Awaiting here is applied only to synchronization of concurrent calls. 
+        /// </remarks>
         public async Task StartAsync(CancellationToken[] linkedTokens, CancellationToken cancellationToken = default)
         {
             if (IsRunning)
             {
+                // ToDo: Consider an alernative exception-safe approach with 'IsRunning' check?
                 throw new InvalidOperationException("Stop worker firstly before calling for a start.");
             }
 
@@ -239,14 +280,20 @@ namespace TaskBasedBackgroundWorkers
         /// <param name="ct"> Cancellation token. </param>
         /// <returns></returns>
         /// <exception cref="InvalidOperationException"></exception>
+        /// <remarks>
+        /// Current method not waits for task-worker execution. Awaiting here is applied only to synchronization of concurrent calls. 
+        /// </remarks>
         public async Task StopAsync(CancellationToken ct = default)
         {
             if (!IsRunning)
             {
+                // ToDo: Consider an alernative exception-safe approach with 'IsRunning' check?
                 throw new InvalidOperationException("Cannot stop not running task.");
             }
 
             await _semaphoreSlim.WaitAsync(ct);
+
+            _cts.Cancel();
 
             try
             {
@@ -261,43 +308,38 @@ namespace TaskBasedBackgroundWorkers
         private void CreateAndStartTask(CancellationTokenSource cts)
         {
             _cts = cts;
-            
-            var ct = _cts.Token;
-            var func = new Action(async () => await ExecuteDoWorkAsync(ct));
 
-            _task = _taskFactory.StartNew(func, ct, _taskCreationOptions, _taskFactory.Scheduler);
+            var ct = _cts.Token;
+            var func = new Action<CancellationToken>(async (token) => await ExecuteDoWorkAsync(token));
+
+            _task = _taskFactory.StartNew(() => func(ct), ct, _taskCreationOptions, _taskFactory.Scheduler);
         }
 
         private async Task ExecuteDoWorkAsync(CancellationToken cancellationToken)
         {
             OnStarted(TaskWorkerStartedEventArgs.Empty);
 
-            bool isForcedStop = false;
-
             try
             {
-                await DoWorkAsync(cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    await DoWorkAsync(cancellationToken).ConfigureAwait(false);
+                }
+                finally
+                {
+                    ReleaseTaskResources();
+                }
+                
+                OnStopped(TaskWorkerStoppedEventArgs.Finished);
             }
             catch (TaskCanceledException)
             {
-                isForcedStop = true;
+                OnStopped(TaskWorkerStoppedEventArgs.Cancelled);
             }
             catch (Exception ex)
             {
-                ExceptionThrown?.Invoke(this, new TaskWorkerExceptionEventArgs(ex));
-            }
-            finally
-            {
-                ReleaseTaskResources();
-            }
-
-            if (isForcedStop)
-            {
-                OnStopped(TaskWorkerStoppedEventArgs.ForcedStop);
-            }
-            else
-            {
-                OnStopped(TaskWorkerStoppedEventArgs.Empty);
+                OnExceptionThrown(new TaskWorkerExceptionEventArgs(ex));
+                OnStopped(TaskWorkerStoppedEventArgs.Exception);
             }
         }
 
@@ -312,9 +354,13 @@ namespace TaskBasedBackgroundWorkers
 
         private void ReleaseTask()
         {
-            if (Helpers.TaskHelper.IsCouldBeDisposed(_task))
+            if (_task != null)
             {
-                _task.Dispose();
+                if (Helpers.TaskHelper.IsCouldBeDisposed(_task))
+                {
+                    _task.Dispose();
+                }
+
                 _task = null;
             }
         }
@@ -332,13 +378,18 @@ namespace TaskBasedBackgroundWorkers
             ProgressChanged = null;
         }
 
+        private void ReleaseInstance()
+        {
+            _semaphoreSlim.Dispose();
+        }
+
         protected virtual void Dispose(bool disposing)
         {
             if (disposing)
             {
                 ReleaseTaskResources();
                 ReleaseEvents();
-                _semaphoreSlim.Dispose();
+                ReleaseInstance();
             }
         }
 

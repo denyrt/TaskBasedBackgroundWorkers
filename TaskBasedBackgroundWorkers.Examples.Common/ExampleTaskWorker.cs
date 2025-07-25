@@ -1,4 +1,5 @@
 ﻿using System.Threading.Tasks;
+using TaskBasedBackgroundWorkers.Examples.Common.Handlers;
 
 namespace TaskBasedBackgroundWorkers.Examples.Common
 {
@@ -10,6 +11,14 @@ namespace TaskBasedBackgroundWorkers.Examples.Common
         ) 
             : base(taskScheduler, taskCreationOptions)
         {
+        }
+
+        public void EnableConsoleOut()
+        {
+            Started += LogToConsoleOutHandlers.LogWorkerStarted;
+            Stopped += LogToConsoleOutHandlers.LogWorkerStopped;
+            ProgressChanged += LogToConsoleOutHandlers.LogWorkerProgressChanged;
+            ExceptionThrown += LogToConsoleOutHandlers.LogWorkerExceptionThrown;
         }
     }
 }
