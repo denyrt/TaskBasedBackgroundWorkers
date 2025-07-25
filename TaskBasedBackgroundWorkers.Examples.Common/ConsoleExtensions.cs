@@ -1,16 +1,16 @@
 ﻿using System;
 using System.Threading.Tasks;
 
-namespace TaskBasedBackgroundWorkers.Examples.Common.Helpers
+namespace TaskBasedBackgroundWorkers.Examples.Common
 {
-    public static class ConsoleHelper
+    public static class ConsoleExtensions
     {
-        public static void LogToConsoleOut(FormattableString message)
+        public static void WriteLineTimestamped(FormattableString message)
         {
             Console.Out.WriteLine(TimestampedMessage(message).ToString());
         }
 
-        public static Task LogToConsoleOutAsync(FormattableString message)
+        public static Task WriteLineTimestampedAsync(FormattableString message)
         {
             return Console.Out.WriteLineAsync(TimestampedMessage(message).ToString());
         }
@@ -20,7 +20,7 @@ namespace TaskBasedBackgroundWorkers.Examples.Common.Helpers
             return $"[{DateTimeOffset.Now:T}]: {message}";
         }
 
-        public static void ReadInputLine(string message)
+        public static void ReadEnter(string message)
         {
             Console.Out.WriteLine(message);
             Console.In.ReadLine();

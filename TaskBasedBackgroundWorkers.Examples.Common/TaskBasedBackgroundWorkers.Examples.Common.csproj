@@ -41,12 +41,9 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="ExampleTaskWorker.cs" />
-    <Compile Include="Handlers\LogToConsoleOutHandlers.cs" />
-    <Compile Include="Helpers\ConsoleHelper.cs" />
-    <Compile Include="ProgressRelayTaskWorker.cs" />
+    <Compile Include="ConsoleExtensions.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="RelayTaskWorker.cs" />
+    <Compile Include="TaskWorkerExtensions.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\TaskBasedBackgroundWorkers\TaskBasedBackgroundWorkers.csproj">
