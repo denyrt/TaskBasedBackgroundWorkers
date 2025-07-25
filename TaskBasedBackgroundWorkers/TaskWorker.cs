@@ -129,7 +129,7 @@ namespace TaskBasedBackgroundWorkers
         /// <remarks>
         /// Called right before <see cref="DoWorkAsync(CancellationToken)"/>. Inner task is already running at moment of this call and <see cref="IsRunning"/> is <see langword="true"/>.
         /// </remarks>
-        protected virtual void OnStarted(TaskWorkerStartedEventArgs e)
+        private void OnStarted(TaskWorkerStartedEventArgs e)
         {
             Started?.Invoke(this, e);
         }
@@ -141,7 +141,7 @@ namespace TaskBasedBackgroundWorkers
         /// <remarks>
         /// Called when <see cref="DoWorkAsync(CancellationToken)"/> finished execution.
         /// </remarks>
-        protected virtual void OnStopped(TaskWorkerStoppedEventArgs e)
+        private void OnStopped(TaskWorkerStoppedEventArgs e)
         {
             Stopped?.Invoke(this, e);
         }
@@ -162,7 +162,7 @@ namespace TaskBasedBackgroundWorkers
         /// <remarks>
         /// Called when <see cref="DoWorkAsync(CancellationToken)"/> fault with unhandled exception.
         /// </remarks>
-        protected virtual void OnExceptionThrown(TaskWorkerExceptionEventArgs e)
+        private void OnExceptionThrown(TaskWorkerExceptionEventArgs e)
         {
             ExceptionThrown?.Invoke(this, e);
         }
