@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -8,29 +10,41 @@ namespace TaskBasedBackgroundWorkers
 {
     /// <summary>
     /// A base type for a thread-safe re-runnable worker that supports stop using its own stop method or via external <see cref="CancellationToken"/>.
+    /// It is wrapped around underlying task which behaviour could be adjusted by passing <see cref="TaskFactory"/>, <see cref="TaskScheduler"/> 
+    /// and <see cref="TaskCreationOptions"/>. So worker behaviour could be setuped for both long-time execution and short-time execution.
     /// </summary>
     /// <remarks>
     /// A few notes:
     /// <list type="bullet">
-    /// Worker could be re-start again if <see cref="IsRunning"/> is <see langword="false"/>.
+    /// Worker could be re-started again if <see cref="IsRunning"/> is <see langword="false"/>.
     /// </list>
     /// <list type="bullet"> 
-    /// All start and stop methods are concurrent synchronized in way that only a of these method could be executed at one moment of time.
-    /// </list>
-    /// <list type="bullet">
-    /// Worker stopping using external <see cref="CancellationToken"/> shares the same synchronized behaivour with start and stop methods.
-    /// So external call cancellationTokenSource.Cancel() will not be performed in one moment of time with start and stop methods.
+    /// Underlying task setup and clean-up are concurrent synchronized in way that only a of them could be executed at one moment of time.
+    /// Worker stopping using either external <see cref="CancellationToken"/> or method <see cref="Stop"/> uses sync for concurrent calls,
+    /// so underlying resources associated with running task could be accessed only from one thread. The same sync is used for start methods.
+    /// It is required to prevent invalid behaviour when both start and stop called from diffent threads in one moment of time.
     /// </list>
     /// </remarks>
     /// <typeparam name="TProgress"> Type that represents progress of worker do-work execution. </typeparam>
     public abstract class TaskWorker<TProgress> : IDisposable
     {
-        private readonly TaskFactory            _taskFactory;
-        private readonly TaskCreationOptions    _taskCreationOptions;
-        private readonly SemaphoreSlim          _semaphoreSlim;
+        // The underlying task factory. TaskScheduler must be present within.
+        private readonly TaskFactory _taskFactory;
 
-        private CancellationTokenSource         _cts;
-        private Task                            _task;
+        // The underlying creation options.
+        private readonly TaskCreationOptions _taskCreationOptions;
+
+        // The semaphore for concurrent sync of underlying task setup/clean-up.
+        private readonly SemaphoreSlim _semaphoreSlim;
+
+        // The underlying cancellation source.
+        private CancellationTokenSource _cts;
+
+        // The handler that performs clean-up in if task was cancelled.
+        private CancellationTokenRegistration? _cleanUpCtr;
+
+        // The underlying task.
+        private Task _task;
 
         /// <summary>
         /// Indicates if worker is still running.
@@ -45,6 +59,9 @@ namespace TaskBasedBackgroundWorkers
         /// <summary>
         /// Raises when worker is stopped.
         /// </summary>
+        /// <remarks>
+        /// The underlying task and its resources are cleaned-up at moment when this event is raised. So new task can be safety sheldured for execution.
+        /// </remarks>
         public event EventHandler<TaskWorkerStoppedEventArgs> Stopped;
 
         /// <summary>
@@ -150,6 +167,13 @@ namespace TaskBasedBackgroundWorkers
             ExceptionThrown?.Invoke(this, e);
         }
 
+        /// <summary>
+        /// Starts worker that executes do-work once upon its run.
+        /// </summary>
+        /// <param name="linkedToken"> 
+        /// A bound cancellation token. Cancellation request this token will lead to stop of current worker. 
+        /// </param>
+        /// <exception cref="InvalidOperationException"></exception>
         public void Start(CancellationToken linkedToken = default)
         {
             var tokens = new CancellationToken[1] { linkedToken };
@@ -164,6 +188,13 @@ namespace TaskBasedBackgroundWorkers
             }
         }
 
+        /// <summary>
+        /// Starts worker that executes do-work once upon its run.
+        /// </summary>
+        /// <param name="linkedTokens"> 
+        /// A bunch of bound cancellation tokens. Cancellation request from one of these tokens will lead to stop of current worker. 
+        /// </param>
+        /// <exception cref="InvalidOperationException"></exception>
         public void Start(IEnumerable<CancellationToken> linkedTokens)
         {
             var tokens = linkedTokens.ToArray();
@@ -179,7 +210,7 @@ namespace TaskBasedBackgroundWorkers
         }
 
         /// <summary>
-        /// Starts worker that executes <see cref="DoWorkAsync(CancellationToken)"/> once upon its run.
+        /// Starts worker that executes do-work once upon its run.
         /// </summary>
         /// <param name="linkedTokens"> 
         /// A bunch of bound cancellation tokens. Cancellation request from one of these tokens will lead to stop of current worker. 
@@ -262,74 +293,32 @@ namespace TaskBasedBackgroundWorkers
                 throw new InvalidOperationException("Cannot stop not running task.");
             }
 
-            _semaphoreSlim.Wait();
-
-            try
-            {
-                _cts.Cancel();
-            }
-            finally
-            {
-                _semaphoreSlim.Release();
-            }
-        }
-
-        /// <summary>
-        /// Sends cancellation signal that lead to stopping of worker and releasing of resources associeted with running task.
-        /// </summary>
-        /// <param name="ct"> Cancellation token. </param>
-        /// <returns></returns>
-        /// <exception cref="InvalidOperationException"></exception>
-        /// <remarks>
-        /// Current method not waits for task-worker execution. Awaiting here is applied only to synchronization of concurrent calls. 
-        /// </remarks>
-        public async Task StopAsync(CancellationToken ct = default)
-        {
-            if (!IsRunning)
-            {
-                // ToDo: Consider an alernative exception-safe approach with 'IsRunning' check?
-                throw new InvalidOperationException("Cannot stop not running task.");
-            }
-
-            await _semaphoreSlim.WaitAsync(ct);
-
             _cts.Cancel();
-
-            try
-            {
-                _cts.Cancel();
-            }
-            finally
-            {
-                _semaphoreSlim.Release();
-            }
         }
 
+        // Setup of task and its associated resources.
         private void CreateAndStartTask(CancellationTokenSource cts)
         {
             _cts = cts;
 
             var ct = _cts.Token;
+
+            _cleanUpCtr = ct.Register(CleanupTaskResources);
+
             var func = new Action<CancellationToken>(async (token) => await ExecuteDoWorkAsync(token));
 
             _task = _taskFactory.StartNew(() => func(ct), ct, _taskCreationOptions, _taskFactory.Scheduler);
         }
 
+        // A method that is passed to underlying task on its creation.
         private async Task ExecuteDoWorkAsync(CancellationToken cancellationToken)
         {
             OnStarted(TaskWorkerStartedEventArgs.Empty);
 
             try
             {
-                try
-                {
-                    await DoWorkAsync(cancellationToken).ConfigureAwait(false);
-                }
-                finally
-                {
-                    CleanupTaskResources();
-                }
-                
+                await DoWorkAsync(cancellationToken).ConfigureAwait(false);
+                CleanupTaskResources();
                 OnStopped(TaskWorkerStoppedEventArgs.Finished);
             }
             catch (TaskCanceledException)
@@ -343,6 +332,17 @@ namespace TaskBasedBackgroundWorkers
             }
         }
 
+        // Clean-up underlying cancellation registration (callbck.
+        private void CleanupCTR()
+        {
+            if (_cleanUpCtr.HasValue)
+            {
+                _cleanUpCtr.Value.Dispose();
+                _cleanUpCtr = null;
+            }
+        }
+
+        // Clean-up underlying cancellation source.
         private void CleanupCTS()
         {
             if (_cts != null)
@@ -352,6 +352,7 @@ namespace TaskBasedBackgroundWorkers
             }
         }
 
+        // Clean-up underlying task.
         private void CleanupTask()
         {
             if (_task != null)
@@ -365,12 +366,24 @@ namespace TaskBasedBackgroundWorkers
             }
         }
 
+        // Organized clean-up of task associated resources.
         private void CleanupTaskResources()
         {
-            CleanupCTS();
-            CleanupTask();
+            _semaphoreSlim.Wait();
+
+            try
+            {
+                CleanupCTR();
+                CleanupCTS();
+                CleanupTask();
+            }
+            finally
+            {
+                _semaphoreSlim.Release();
+            }
         }
 
+        // Organized clean-up of exposed event handlers.
         private void CleanupEvents()
         {
             Started = null;
@@ -379,6 +392,7 @@ namespace TaskBasedBackgroundWorkers
             ExceptionThrown = null;
         }
 
+        // Organized clean-up of other underlying objects.
         private void CleanupInstance()
         {
             _semaphoreSlim.Dispose();
@@ -394,6 +408,9 @@ namespace TaskBasedBackgroundWorkers
             }
         }
 
+        /// <summary>
+        /// Releases all resources used by current instance of <see cref="TaskWorker{TProgress}"/>.
+        /// </summary>
         public void Dispose()
         {
             Dispose(true);
