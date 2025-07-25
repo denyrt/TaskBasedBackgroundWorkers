@@ -327,6 +327,7 @@ namespace TaskBasedBackgroundWorkers
             }
             catch (Exception ex)
             {
+                CleanupTaskResources();
                 OnExceptionThrown(new TaskWorkerExceptionEventArgs(ex));
                 OnStopped(TaskWorkerStoppedEventArgs.Exception);
             }
