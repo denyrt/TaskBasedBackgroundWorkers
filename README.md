@@ -17,13 +17,13 @@ A few main purposes that this object could fulfill:
 
 | Feature               | IsReady                         |
 |-----------------------|---------------------------------|
-| _Resource-Management_ | <input type="checkbox" checked> |
-| _Thread-Safety_       | <input type="checkbox" checked> |
-| _Life-Time Events_    | <input type="checkbox" checked> |
-| _Progress Tracking_   | <input type="checkbox" checked> |
-| _`RelayWorker`_       | <input type="checkbox"        > |
-| _`WorkerScheldure`_   | <input type="checkbox"        > |
-| _Fluent API_          | <input type="checkbox"        > |
+| _Resource-Management_ | <ul><li>- [x] </li></ul>        |
+| _Thread-Safety_       | <ul><li>- [x] </li></ul>        |
+| _Life-Time Events_    | <ul><li>- [x] </li></ul>        |
+| _Progress Tracking_   | <ul><li>- [x] </li></ul>        |
+| _`RelayWorker`_       | <ul><li>- [ ] </li></ul>        |
+| _`WorkerScheldure`_   | <ul><li>- [ ] </li></ul>        |
+| _Fluent API_          | <ul><li>- [ ] </li></ul>        |
 
 ### _Resources-Management_
 
