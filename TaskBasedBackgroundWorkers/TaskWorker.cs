@@ -44,6 +44,7 @@ namespace TaskBasedBackgroundWorkers
         // The underlying indicator of disposal state.
         private bool _disposed = false;
 
+        // ToDo: Consider throwing ObjectDisposedException where this member is accessed.
         private bool IsDisposedBlocking
         {
             get
@@ -556,6 +557,7 @@ namespace TaskBasedBackgroundWorkers
             finally
             {
                 _disposedSemaphoreSlim.Release();
+                _disposedSemaphoreSlim.Dispose();
             }
 
             DebugExit(callerName);
