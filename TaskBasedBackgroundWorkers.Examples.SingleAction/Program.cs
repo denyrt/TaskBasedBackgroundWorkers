@@ -9,13 +9,18 @@ namespace TaskBasedBackgroundWorkers.Examples.SingleAction
             using (var worker = new SingleActionWorker())
             {
                 worker.EnableConsoleLog();
-                worker.Start();
+                
+                StartResult start = worker.Start();
+
+                ConsoleExtensions.WriteLineTimestamped($"(hash: {worker.GetHashCode()}) <{nameof(worker.Start)}> called [start = {start}]");
 
                 ConsoleExtensions.ReadEnter("Press <Enter> to stop worker...");
 
                 if (worker.IsRunning)
                 {
-                    worker.Stop();
+                    StopResult stop = worker.Stop();
+
+                    ConsoleExtensions.WriteLineTimestamped($"(hash: {worker.GetHashCode()}) <{nameof(worker.Stop)}> called [stop = {stop}]");
                 }
             }
 

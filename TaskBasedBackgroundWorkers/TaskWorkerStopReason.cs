@@ -7,16 +7,16 @@
         /// <summary>
         /// Task worker successfully finished execution.
         /// </summary>
-        Finished = 1,
+        Finished,
 
         /// <summary>
-        /// Task worker was cancelled using external <see cref="System.Threading.CancellationTokenSource"/> or <see cref="TaskWorker{TProgress}.Stop"/> 
+        /// Task worker was stoped using cancellation request.
         /// </summary>
-        Cancelled = 2,
+        Cancelled,
         
         /// <summary>
         /// Task worker fault with unhandled exception.
         /// </summary>
-        Exception = 3
+        Exception
     }
 }
