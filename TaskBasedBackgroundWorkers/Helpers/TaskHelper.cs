@@ -1,14 +1,14 @@
-﻿using System.Threading.Tasks;
+﻿using System.Runtime.CompilerServices;
+using System.Threading.Tasks;
 
 namespace TaskBasedBackgroundWorkers.Helpers
 {
-    public static class TaskHelper
+    internal static class TaskHelper
     {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool IsCouldBeDisposed(Task task)
         {
-            return task.Status == TaskStatus.RanToCompletion
-                || task.Status == TaskStatus.Faulted
-                || task.Status == TaskStatus.Canceled;
+            return task.IsCompleted;
         }
     }
 }

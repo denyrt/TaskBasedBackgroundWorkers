@@ -34,14 +34,42 @@ namespace TaskBasedBackgroundWorkers
         // The underlying creation options.
         private readonly TaskCreationOptions _taskCreationOptions;
 
-        // The synchronization of underlying task setup/clean-up to prevent concurrent changes of its state.
-        private readonly SemaphoreSlim _semaphoreSlim;
+        // The synchronization of underlying task setup/clean-up to prevent dirty-read and concurrent changes of its state.
+        // Must be applied to: _cts, _task, IsRunning.
+        private readonly SemaphoreSlim _taskResourcesSemaphoreSlim;
+
+        // The synchronization of _disposed for thread-safe Dispose().
+        private readonly SemaphoreSlim _disposedSemaphoreSlim;
+
+        // The underlying indicator of disposal state.
+        private bool _disposed = false;
+
+        private bool IsDisposedBlocking
+        {
+            get
+            {
+                try
+                {
+                    _disposedSemaphoreSlim.Wait();
+                }
+                catch
+                {
+                    return true;
+                }
+
+                try
+                {
+                    return _disposed;
+                }
+                finally
+                {
+                    _disposedSemaphoreSlim.Release();
+                }
+            }
+        }
 
         // The underlying cancellation source.
         private CancellationTokenSource _cts;
-
-        // The handler that performs clean-up in if task was cancelled.
-        private CancellationTokenRegistration? _cleanUpCtr;
 
         // The underlying task.
         private Task _task;
@@ -49,7 +77,33 @@ namespace TaskBasedBackgroundWorkers
         /// <summary>
         /// Indicates if worker is still running.
         /// </summary>
-        public bool IsRunning => _task != null;
+        public bool IsRunning
+        {
+            get => _task != null;
+        }
+
+        /// <summary>
+        /// Blocking access to <see cref="IsRunning"/>.
+        /// </summary>
+        /// <remarks>
+        /// Synced via <see cref="_taskResourcesSemaphoreSlim"/>.
+        /// </remarks>
+        private bool IsRunningBlocking
+        {
+            get
+            {
+                _taskResourcesSemaphoreSlim.Wait();
+
+                try
+                {
+                    return IsRunning;
+                }
+                finally
+                {
+                    _taskResourcesSemaphoreSlim.Release();
+                }
+            }
+        }
 
         /// <summary>
         /// Raises when worker is started.
@@ -113,8 +167,17 @@ namespace TaskBasedBackgroundWorkers
 
             _taskFactory = taskFactory;
             _taskCreationOptions = taskCreationOptions;
-            _semaphoreSlim = new SemaphoreSlim(1, 1);
+            _taskResourcesSemaphoreSlim = new SemaphoreSlim(1, 1);
+            _disposedSemaphoreSlim = new SemaphoreSlim(1, 1);
 
+            DebugExit();
+        }
+
+        // Finalizer.
+        ~TaskWorker()
+        {
+            DebugEnter();
+            Dispose(false);
             DebugExit();
         }
 
@@ -132,13 +195,6 @@ namespace TaskBasedBackgroundWorkers
         /// </returns>
         protected abstract Task DoWorkAsync(IProgress<TProgress> progress, CancellationToken cancellationToken);
 
-        /// <summary> 
-        /// Raises <see cref="Started"/> event.
-        /// </summary>
-        /// <param name="e"> Args within event. </param>
-        /// <remarks>
-        /// Called right before <see cref="DoWorkAsync(CancellationToken)"/>. Inner task is already running at moment of this call and <see cref="IsRunning"/> is <see langword="true"/>.
-        /// </remarks>
         private void OnStarted(TaskWorkerStartedEventArgs e)
         {
             DebugEnter();
@@ -148,13 +204,6 @@ namespace TaskBasedBackgroundWorkers
             DebugExit();
         }
 
-        /// <summary> 
-        /// Raises <see cref="Stopped"/> event. 
-        /// </summary>
-        /// <param name="e"> Args within event. </param>
-        /// <remarks>
-        /// Called when <see cref="DoWorkAsync(CancellationToken)"/> finished execution.
-        /// </remarks>
         private void OnStopped(TaskWorkerStoppedEventArgs e)
         {
             DebugEnter();
@@ -164,10 +213,6 @@ namespace TaskBasedBackgroundWorkers
             DebugExit();
         }
 
-        /// <summary>
-        /// Raises <see cref="ProgressChanged"/> event.
-        /// </summary>
-        /// <param name="e"> Value of progress. </param>
         private void OnProgressChanged(TaskWorkerProgressChangedEventArgs<TProgress> e)
         {
             DebugEnter();
@@ -177,13 +222,6 @@ namespace TaskBasedBackgroundWorkers
             DebugExit();
         }
 
-        /// <summary>
-        /// Raises <see cref="ExceptionThrown"/> event.
-        /// </summary>
-        /// <param name="e"></param>
-        /// <remarks>
-        /// Called when <see cref="DoWorkAsync(CancellationToken)"/> fault with unhandled exception.
-        /// </remarks>
         private void OnExceptionThrown(TaskWorkerExceptionEventArgs e)
         {
             DebugEnter();
@@ -199,16 +237,16 @@ namespace TaskBasedBackgroundWorkers
         /// <param name="linkedToken"> 
         /// A bound cancellation token. Cancellation request this token will lead to stop of current worker. 
         /// </param>
-        /// <exception cref="InvalidOperationException"></exception>
-        public void Start(CancellationToken linkedToken = default)
+        /// <exception cref="ArgumentException"></exception>
+        public StartResult Start(CancellationToken linkedToken = default)
         {
             var tokens = new CancellationToken[1] { linkedToken };
-
+            
             try
             {
-                Start(tokens);
+                return Start(tokens);
             }
-            catch (InvalidOperationException ex)
+            catch (ArgumentException ex)
             {
                 throw ex;
             }
@@ -220,16 +258,16 @@ namespace TaskBasedBackgroundWorkers
         /// <param name="linkedTokens"> 
         /// A bunch of bound cancellation tokens. Cancellation request from one of these tokens will lead to stop of current worker. 
         /// </param>
-        /// <exception cref="InvalidOperationException"></exception>
-        public void Start(IEnumerable<CancellationToken> linkedTokens)
+        /// <exception cref="ArgumentException"></exception>
+        public StartResult Start(IEnumerable<CancellationToken> linkedTokens)
         {
             var tokens = linkedTokens.ToArray();
 
             try
             {
-                Start(tokens);
+                return Start(tokens);
             }
-            catch (InvalidOperationException ex)
+            catch (ArgumentException ex)
             {
                 throw ex;
             }
@@ -241,31 +279,40 @@ namespace TaskBasedBackgroundWorkers
         /// <param name="linkedTokens"> 
         /// A bunch of bound cancellation tokens. Cancellation request from one of these tokens will lead to stop of current worker. 
         /// </param>
-        /// <exception cref="InvalidOperationException"></exception>
-        public void Start(CancellationToken[] linkedTokens)
+        /// <exception cref="ArgumentException"></exception>
+        /// <remarks> Uses blocking-sync for concurrent call. </remarks>
+        /// <returns> A state that describes start operation result. </returns>
+        public StartResult Start(CancellationToken[] linkedTokens)
         {
-            if (IsRunning)
-            {
-                throw new InvalidOperationException("Stop worker firstly before calling for a start.");
-            }
-
             if (linkedTokens.Length == 0)
             {
-                throw new InvalidOperationException($"Array '{linkedTokens}' cannot be empty.");
+                throw new ArgumentException("Linked tokens cannot be empty.", nameof(linkedTokens));
             }
 
-            _semaphoreSlim.Wait();
+            if (IsDisposedBlocking) 
+            {
+                return StartResult.None;
+            }
+
+            _taskResourcesSemaphoreSlim.Wait();
 
             try
             {
+                if (IsRunning)
+                {
+                    return StartResult.StopRequired;
+                }
+
                 var cts = CancellationTokenSource.CreateLinkedTokenSource(linkedTokens);
 
                 CreateAndStartTask(cts);
             }
             finally
             {
-                _semaphoreSlim.Release();
+                _taskResourcesSemaphoreSlim.Release();
             }
+
+            return StartResult.Ok;
         }
 
         /// <summary>
@@ -277,49 +324,73 @@ namespace TaskBasedBackgroundWorkers
         /// <param name="cancellationToken"> 
         /// Cancellation token that could be used to cancel starting of worker. 
         /// </param>
-        /// <exception cref="InvalidOperationException"></exception>
+        /// <exception cref="ArgumentException"></exception>
         /// <remarks>
-        /// Current method not waits for task-worker execution. Awaiting here is applied only to synchronization of concurrent calls. 
+        /// Uses blocking-sync for concurrent call. Current method not awaits for task-worker execution.
+        /// Awaiting here is applied only to synchronization of concurrent calls so cancellation request will terminate blocking-wait.
         /// </remarks>
-        public async Task StartAsync(CancellationToken[] linkedTokens, CancellationToken cancellationToken = default)
+        /// <returns> A state that describes start operation result. <see cref="StartResult.None"/> returns only when worker is already disposed. </returns>
+        public async Task<StartResult> StartAsync(CancellationToken[] linkedTokens, CancellationToken cancellationToken = default)
         {
-            if (IsRunning)
-            {
-                // ToDo: Consider an alernative exception-safe approach with 'IsRunning' check?
-                throw new InvalidOperationException("Stop worker firstly before calling for a start.");
-            }
-
             if (linkedTokens.Length == 0)
             {
-                throw new InvalidOperationException($"Array '{linkedTokens}' cannot be empty.");
+                throw new ArgumentException("Linked tokens cannot be empty.", nameof(linkedTokens));
             }
 
-            await _semaphoreSlim.WaitAsync(cancellationToken);
+            if (IsDisposedBlocking)
+            {
+                return StartResult.None;
+            }
+
+            await _taskResourcesSemaphoreSlim.WaitAsync(cancellationToken);
 
             try
             {
+                if (IsRunning)
+                {
+                    return StartResult.StopRequired;
+                }
+
                 var cts = CancellationTokenSource.CreateLinkedTokenSource(linkedTokens);
 
                 CreateAndStartTask(cts);
             }
             finally
             {
-                _semaphoreSlim.Release();
+                _taskResourcesSemaphoreSlim.Release();
             }
+
+            return StartResult.Ok;
         }
 
         /// <summary>
         /// Sends cancellation signal that lead to stopping of worker and releasing of resources associeted with running task.
         /// </summary>
-        /// <exception cref="InvalidOperationException"></exception>
-        public void Stop()
+        /// <returns> A state that describes stop operation result. <see cref="StopResult.None"/> returns only when worker is already disposed. </returns>
+        public StopResult Stop()
         {
-            if (!IsRunning)
+            if (IsDisposedBlocking)
             {
-                throw new InvalidOperationException("Cannot stop not running task.");
+                return StopResult.None;
+            }
+
+            _taskResourcesSemaphoreSlim.Wait();
+
+            try
+            {
+                if (!IsRunning)
+                {
+                    return StopResult.StartRequired;
+                }
+            }
+            finally 
+            {
+                _taskResourcesSemaphoreSlim.Release(); 
             }
 
             _cts.Cancel();
+
+            return StopResult.Ok;
         }
 
         // Setup of task and its associated resources.
@@ -328,8 +399,6 @@ namespace TaskBasedBackgroundWorkers
             _cts = cts;
 
             var ct = _cts.Token;
-
-            _cleanUpCtr = ct.Register(CleanupTaskResources);
 
             var func = new Action<CancellationToken>(async (token) => await ExecuteDoWorkAsync(token));
 
@@ -354,6 +423,8 @@ namespace TaskBasedBackgroundWorkers
             }
             catch (TaskCanceledException)
             {
+                CleanupTaskResources();
+
                 OnStopped(TaskWorkerStoppedEventArgs.Cancelled);
             }
             catch (Exception ex)
@@ -366,38 +437,42 @@ namespace TaskBasedBackgroundWorkers
             }
         }
 
-        // Clean-up underlying cancellation registration (callbck.
-        private void CleanupCTR()
-        {
-            if (_cleanUpCtr.HasValue)
-            {
-                _cleanUpCtr.Value.Dispose();
-                _cleanUpCtr = null;
-            }
-        }
-
         // Clean-up underlying cancellation source.
         private void CleanupCTS()
         {
+            DebugEnter();
+
             if (_cts != null)
             {
+                Debug($"Disposing {nameof(_cts)}.");
+
                 _cts.Dispose();
                 _cts = null;
             }
+
+            DebugExit();
         }
 
         // Clean-up underlying task.
         private void CleanupTask()
         {
+            DebugEnter();
+
             if (_task != null)
             {
+                Debug($"{nameof(_task)} is not null.");
+
                 if (Helpers.TaskHelper.IsCouldBeDisposed(_task))
                 {
+                    Debug($"Disposing {nameof(_task)}.");
+
                     _task.Dispose();
                 }
 
                 _task = null;
             }
+
+            DebugExit();
         }
 
         // Organized clean-up of task associated resources.
@@ -407,15 +482,14 @@ namespace TaskBasedBackgroundWorkers
 
             try
             {
-                _semaphoreSlim.Wait();
+                _taskResourcesSemaphoreSlim.Wait();
 
-                CleanupCTR();
                 CleanupCTS();
                 CleanupTask();
             }
             finally
             {
-                _semaphoreSlim.Release();
+                _taskResourcesSemaphoreSlim.Release();
             }
 
             DebugExit();
@@ -439,28 +513,60 @@ namespace TaskBasedBackgroundWorkers
         {
             DebugEnter();
 
-            _semaphoreSlim.Dispose();
-
-            DebugExit();
-        }
-
-        protected virtual void Dispose(bool disposing)
-        {
-            DebugEnter();
-
-            if (disposing)
-            {
-                CleanupTaskResources();
-                CleanupEvents();
-                CleanupInstance();
-            }
+            _taskResourcesSemaphoreSlim.Dispose();
 
             DebugExit();
         }
 
         /// <summary>
+        /// Releases unmanaged resources used by the <see cref="TaskWorker{TProgress}"/> and optionally releases the managed resources. 
+        /// </summary>
+        /// <param name="disposing"> <see langword="true"/> to release both managed and unmanaged resources; <see langword="false"/> to release only unmanaged resources. </param>
+        protected virtual void Dispose(bool disposing)
+        {
+            string callerName = $"{nameof(Dispose)}({nameof(disposing)}={disposing})";
+            
+            DebugEnter(callerName);
+
+            try
+            {
+                _disposedSemaphoreSlim.Wait();
+
+                if (_disposed)
+                {
+                    Debug("Already disposed.");
+                    return;
+                }
+
+                if (disposing)
+                {
+                    if (IsRunningBlocking)
+                    {
+                        Debug("Worker is running while disposing.");
+                        Debug("Performing auto-stop.");
+                        Stop();
+                    }
+
+                    CleanupEvents();
+                    CleanupInstance();
+                }
+
+                _disposed = true;
+            }
+            finally
+            {
+                _disposedSemaphoreSlim.Release();
+            }
+
+            DebugExit(callerName);
+        }
+
+        /// <summary>
         /// Releases all resources used by current instance of <see cref="TaskWorker{TProgress}"/>.
         /// </summary>
+        /// <remarks>
+        /// Recommended to dispose explicit. Also it is additionally requests for worker stopping if it is still running.
+        /// </remarks>
         public void Dispose()
         {
             DebugEnter();

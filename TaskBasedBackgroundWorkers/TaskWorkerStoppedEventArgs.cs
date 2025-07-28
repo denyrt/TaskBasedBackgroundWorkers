@@ -15,9 +15,6 @@
         /// <summary>
         /// A reserved instance that describes empty state of <see cref="TaskWorkerStoppedEventArgs"/>.
         /// </summary>
-        /// <remarks>
-        /// Notice that <see cref="StopReason"/> assigned to <see cref="TaskWorkerStopReason.None"/>.
-        /// </remarks>
         public new static readonly TaskWorkerStoppedEventArgs Empty = new TaskWorkerStoppedEventArgs(TaskWorkerStopReason.None);
 
         /// <summary>
