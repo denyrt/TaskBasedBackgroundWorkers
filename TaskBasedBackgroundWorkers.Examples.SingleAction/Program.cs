@@ -7,10 +7,13 @@ namespace TaskBasedBackgroundWorkers.Examples.SingleAction
         public static void Main()
         {
             using (var worker = new SingleActionWorker())
+            using (var cts = new System.Threading.CancellationTokenSource())
             {
                 worker.EnableConsoleLog();
-                
-                StartResult start = worker.Start();
+
+                cts.Cancel();
+
+                StartResult start = worker.Start(cts.Token);
 
                 ConsoleExtensions.WriteLineTimestamped($"(hash: {worker.GetHashCode()}) <{nameof(worker.Start)}> called [start = {start}]");
 
