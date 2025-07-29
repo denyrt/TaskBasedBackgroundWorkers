@@ -9,7 +9,9 @@ namespace TaskBasedBackgroundWorkers.Examples.LongRunningLoop
     {
         public static async Task Main()
         {
-            using (var worker = new LoopWorker())
+            var taskFactory = TaskFactoryHelper.CreateLongRunning(TaskScheduler.Default);
+
+            using (var worker = new LoopWorker(taskFactory))
             {
                 worker.EnableConsoleLog();
 

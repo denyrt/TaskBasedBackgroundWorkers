@@ -6,6 +6,10 @@ namespace TaskBasedBackgroundWorkers.Examples.SingleAction
 {
     public sealed class SingleActionWorker : TaskWorker<int>
     {
+        public SingleActionWorker(TaskFactory taskFactory) : base(taskFactory)
+        {
+        }
+
         protected override async Task DoWorkAsync(IProgress<int> progress, CancellationToken cancellationToken)
         {
             for (int i = 0; i < 5; ++i)

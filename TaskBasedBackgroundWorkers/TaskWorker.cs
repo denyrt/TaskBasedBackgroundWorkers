@@ -28,11 +28,8 @@ namespace TaskBasedBackgroundWorkers
     /// <typeparam name="TProgress"> Type that represents progress of worker do-work execution. </typeparam>
     public abstract class TaskWorker<TProgress> : IDisposable
     {
-        // The underlying task factory. TaskScheduler must be present within.
+        // The underlying task factory.
         private readonly TaskFactory _taskFactory;
-
-        // The underlying creation options.
-        private readonly TaskCreationOptions _taskCreationOptions;
 
         // The synchronization of underlying task setup/clean-up to prevent dirty-read and concurrent changes of its state.
         // Must be applied to: _cts, _task, IsRunning.
@@ -40,34 +37,6 @@ namespace TaskBasedBackgroundWorkers
 
         // The synchronization of _disposed for thread-safe Dispose().
         private readonly SemaphoreSlim _disposedSemaphoreSlim;
-
-        // The underlying indicator of disposal state.
-        private bool _disposed = false;
-
-        // ToDo: Consider throwing ObjectDisposedException where this member is accessed.
-        private bool IsDisposedBlocking
-        {
-            get
-            {
-                try
-                {
-                    _disposedSemaphoreSlim.Wait();
-                }
-                catch
-                {
-                    return true;
-                }
-
-                try
-                {
-                    return _disposed;
-                }
-                finally
-                {
-                    _disposedSemaphoreSlim.Release();
-                }
-            }
-        }
 
         // The underlying cancellation source.
         private CancellationTokenSource _cts;
@@ -83,6 +52,7 @@ namespace TaskBasedBackgroundWorkers
             get => _task != null;
         }
 
+        // ToDo: Consider changed this to method.
         /// <summary>
         /// Blocking access to <see cref="IsRunning"/>.
         /// </summary>
@@ -99,9 +69,42 @@ namespace TaskBasedBackgroundWorkers
                 {
                     return IsRunning;
                 }
+                catch (ObjectDisposedException)
+                {
+                    return false;
+                }
                 finally
                 {
                     _taskResourcesSemaphoreSlim.Release();
+                }
+            }
+        }
+
+        // The underlying indicator of disposal state.
+        private bool _disposed = false;
+
+        // ToDo: Consider throwing ObjectDisposedException where this member is accessed.
+        // ToDo: Consider change this to method.
+        private bool IsDisposedBlocking
+        {
+            get
+            {
+                try
+                {
+                    _disposedSemaphoreSlim.Wait();
+                }
+                catch (ObjectDisposedException)
+                {
+                    return true;
+                }
+
+                try
+                {
+                    return _disposed;
+                }
+                finally
+                {
+                    _disposedSemaphoreSlim.Release();
                 }
             }
         }
@@ -133,41 +136,16 @@ namespace TaskBasedBackgroundWorkers
         public event EventHandler<TaskWorkerExceptionEventArgs> ExceptionThrown;
 
         /// <summary>
-        /// Initializes new instance of <see cref="TaskWorker{TProgress}"/> using <see cref="TaskScheduler.Default"/> and <see cref="TaskCreationOptions.None"/> as parameters.
-        /// </summary>
-        public TaskWorker() : this(TaskScheduler.Default, TaskCreationOptions.None)
-        {
-        }
-
-        /// <summary>
-        /// Initializes new instance of <see cref="TaskWorker{TProgress}"/> using custom <see cref="TaskScheduler"/> and <see cref="TaskCreationOptions"/>.
-        /// </summary>
-        /// <param name="taskScheduler"> Task scheduler that will be used within inner task factory. </param>
-        /// <param name="taskCreationOptions"> Options that will be used to run worker. </param>
-        public TaskWorker(TaskScheduler taskScheduler, TaskCreationOptions taskCreationOptions) : this(new TaskFactory(taskScheduler), taskCreationOptions)
-        {
-        }
-
-        /// <summary>
         /// Initializes new instance of <see cref="TaskWorker{TProgress}"/> with custom <see cref="TaskFactory"/> and <see cref="TaskCreationOptions"/>.
         /// </summary>
         /// <param name="taskFactory"> Task factory that will be used to create tasks for worker. </param>
         /// <param name="taskCreationOptions"> Options that will be used to run worker. </param>
-        /// <exception cref="ArgumentException"></exception>
-        /// <remarks>
-        /// <paramref name="taskFactory"/> must have not null <see cref="TaskScheduler"/>
-        /// </remarks>
-        public TaskWorker(TaskFactory taskFactory, TaskCreationOptions taskCreationOptions)
+        /// <exception cref="ArgumentNullException"></exception>
+        public TaskWorker(TaskFactory taskFactory)
         {
             DebugEnter();
-
-            if (taskFactory.Scheduler == null)
-            {
-                throw new ArgumentException($"Cannot accept task factory without scheduler.", nameof(taskFactory.Scheduler));
-            }
-
-            _taskFactory = taskFactory;
-            _taskCreationOptions = taskCreationOptions;
+            
+            _taskFactory = taskFactory ?? throw new ArgumentNullException(nameof(taskFactory));
             _taskResourcesSemaphoreSlim = new SemaphoreSlim(1, 1);
             _disposedSemaphoreSlim = new SemaphoreSlim(1, 1);
 
@@ -424,7 +402,7 @@ namespace TaskBasedBackgroundWorkers
                 _taskResourcesSemaphoreSlim.Release(); 
             }
 
-            _cts.Cancel();
+            _cts?.Cancel();
 
             return StopResult.Ok;
         }
@@ -438,7 +416,7 @@ namespace TaskBasedBackgroundWorkers
 
             var func = new Action<CancellationToken>(async (token) => await ExecuteDoWorkAsync(token));
 
-            _task = _taskFactory.StartNew(() => func(ct), ct, _taskCreationOptions, _taskFactory.Scheduler);
+            _task = _taskFactory.StartNew(() => func(ct));
         }
 
         // A method that is passed to underlying task on its creation.

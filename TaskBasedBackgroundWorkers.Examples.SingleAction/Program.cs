@@ -1,4 +1,6 @@
-﻿using TaskBasedBackgroundWorkers.Examples.Common;
+﻿using System.Threading;
+using System.Threading.Tasks;
+using TaskBasedBackgroundWorkers.Examples.Common;
 
 namespace TaskBasedBackgroundWorkers.Examples.SingleAction
 {
@@ -6,8 +8,8 @@ namespace TaskBasedBackgroundWorkers.Examples.SingleAction
     {
         public static void Main()
         {
-            using (var worker = new SingleActionWorker())
-            using (var cts = new System.Threading.CancellationTokenSource())
+            using (var worker = new SingleActionWorker(Task.Factory))
+            using (var cts = new CancellationTokenSource())
             {
                 worker.EnableConsoleLog();
 
