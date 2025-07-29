@@ -328,15 +328,19 @@ namespace TaskBasedBackgroundWorkers
                 }
 
                 var cts = CancellationTokenSource.CreateLinkedTokenSource(linkedTokens);
+                if (cts.IsCancellationRequested)
+                {
+                    cts.Dispose();
+                    return StartResult.AlreadyCancelled;
+                }
 
                 CreateAndStartTask(cts);
+                return StartResult.Ok;
             }
             finally
             {
                 _taskResourcesSemaphoreSlim.Release();
             }
-
-            return StartResult.Ok;
         }
 
         /// <summary>

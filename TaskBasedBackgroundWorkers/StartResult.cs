@@ -15,6 +15,11 @@
         /// <summary>
         /// Worker must be in stopped state to perform start.
         /// </summary>
-        StopRequired
+        StopRequired,
+
+        /// <summary>
+        /// One of passed <see cref="System.Threading.CancellationToken"/> is already cancelled.
+        /// </summary>
+        AlreadyCancelled
     }
 }
