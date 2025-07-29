@@ -238,6 +238,14 @@ namespace TaskBasedBackgroundWorkers
         /// <param name="linkedToken"> 
         /// A bound cancellation token. Cancellation request this token will lead to stop of current worker. 
         /// </param>
+        /// <remarks>
+        /// <list type="bullet">
+        /// <see cref="StartResult.None"/> is returned if call this method when <see cref="TaskWorker{TProgress}"/> is disposed.
+        /// </list>
+        /// <list type="bullet">
+        /// Uses blocking-sync for concurrent call.
+        /// </list>
+        /// </remarks>
         /// <exception cref="ArgumentException"></exception>
         public StartResult Start(CancellationToken linkedToken = default)
         {
@@ -259,6 +267,14 @@ namespace TaskBasedBackgroundWorkers
         /// <param name="linkedTokens"> 
         /// A bunch of bound cancellation tokens. Cancellation request from one of these tokens will lead to stop of current worker. 
         /// </param>
+        /// <remarks>
+        /// <list type="bullet">
+        /// <see cref="StartResult.None"/> is returned if call this method when <see cref="TaskWorker{TProgress}"/> is disposed.
+        /// </list>
+        /// <list type="bullet">
+        /// Uses blocking-sync for concurrent call.
+        /// </list>
+        /// </remarks>
         /// <exception cref="ArgumentException"></exception>
         public StartResult Start(IEnumerable<CancellationToken> linkedTokens)
         {
@@ -281,7 +297,14 @@ namespace TaskBasedBackgroundWorkers
         /// A bunch of bound cancellation tokens. Cancellation request from one of these tokens will lead to stop of current worker. 
         /// </param>
         /// <exception cref="ArgumentException"></exception>
-        /// <remarks> Uses blocking-sync for concurrent call. </remarks>
+        /// <remarks>
+        /// <list type="bullet">
+        /// <see cref="StartResult.None"/> is returned if call this method when <see cref="TaskWorker{TProgress}"/> is disposed.
+        /// </list>
+        /// <list type="bullet">
+        /// Uses blocking-sync for concurrent call.
+        /// </list>
+        /// </remarks>
         /// <returns> A state that describes start operation result. </returns>
         public StartResult Start(CancellationToken[] linkedTokens)
         {
@@ -327,10 +350,18 @@ namespace TaskBasedBackgroundWorkers
         /// </param>
         /// <exception cref="ArgumentException"></exception>
         /// <remarks>
-        /// Uses blocking-sync for concurrent call. Current method not awaits for task-worker execution.
+        /// <list type="bullet">
+        /// <see cref="StartResult.None"/> is returned if call this method when <see cref="TaskWorker{TProgress}"/> is disposed.
+        /// </list>
+        /// <list type="bullet">
+        /// Uses blocking-sync for concurrent call.
+        /// </list>
+        /// <list type="bullet">
+        /// This method not awaits for task-worker execution.
         /// Awaiting here is applied only to synchronization of concurrent calls so cancellation request will terminate blocking-wait.
+        /// </list>
         /// </remarks>
-        /// <returns> A state that describes start operation result. <see cref="StartResult.None"/> returns only when worker is already disposed. </returns>
+        /// <returns> A state that describes start operation result. </returns>
         public async Task<StartResult> StartAsync(CancellationToken[] linkedTokens, CancellationToken cancellationToken = default)
         {
             if (linkedTokens.Length == 0)
@@ -545,7 +576,8 @@ namespace TaskBasedBackgroundWorkers
                     {
                         Debug("Worker is running while disposing.");
                         Debug("Performing auto-stop.");
-                        Stop();
+                        
+                        _cts?.Cancel();
                     }
 
                     CleanupEvents();
