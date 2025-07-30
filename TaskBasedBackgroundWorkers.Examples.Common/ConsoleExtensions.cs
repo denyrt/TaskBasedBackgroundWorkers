@@ -1,38 +1,27 @@
 ﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
+using TaskBasedBackgroundWorkers.Concurrency;
 
 namespace TaskBasedBackgroundWorkers.Examples.Common
 {
     public static class ConsoleExtensions
     {
-        private static readonly SemaphoreSlim _semaphoreSlim = new SemaphoreSlim(1, 1);
+        private static readonly SemaphoreSlim _semaphore = new SemaphoreSlim(1, 1);
 
         public static void WriteLineTimestamped(FormattableString message)
         {
-            _semaphoreSlim.Wait();
-
-            try
+            using (var handle = ConcurrentHandle.EnterBlocking(_semaphore))
             {
                 Console.Out.WriteLine(TimestampedMessage(message).ToString());
-            }
-            finally
-            {
-                _semaphoreSlim.Release();
             }
         }
 
         public static async Task WriteLineTimestampedAsync(FormattableString message)
         {
-            await _semaphoreSlim.WaitAsync();
-
-            try
+            using (var handle = await ConcurrentHandle.EnterBlockingAsync(_semaphore))
             {
                 await Console.Out.WriteLineAsync(TimestampedMessage(message).ToString());
-            }
-            finally
-            {
-                _semaphoreSlim.Release();
             }
         }
 

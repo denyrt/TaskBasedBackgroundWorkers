@@ -5,6 +5,7 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
+using TaskBasedBackgroundWorkers.Concurrency;
 
 namespace TaskBasedBackgroundWorkers
 {
@@ -32,11 +33,10 @@ namespace TaskBasedBackgroundWorkers
         private readonly TaskFactory _taskFactory;
 
         // The synchronization of underlying task setup/clean-up to prevent dirty-read and concurrent changes of its state.
-        // Must be applied to: _cts, _task, IsRunning.
-        private readonly SemaphoreSlim _taskResourcesSemaphoreSlim;
+        private readonly SemaphoreSlim _taskResourcesMutex;
 
-        // The synchronization of _disposed for thread-safe Dispose().
-        private readonly SemaphoreSlim _disposedSemaphoreSlim;
+        // The synchronization for thread-safe Dispose().
+        private readonly SemaphoreSlim _disposedMutex;
 
         // The underlying cancellation source.
         private CancellationTokenSource _cts;
@@ -44,73 +44,15 @@ namespace TaskBasedBackgroundWorkers
         // The underlying task.
         private Task _task;
 
+        // The underlying indicator of disposal state.
+        private bool _disposed = false;
+
         /// <summary>
         /// Indicates if worker is still running.
         /// </summary>
         public bool IsRunning
         {
             get => _task != null;
-        }
-
-        // ToDo: Consider changed this to method.
-        /// <summary>
-        /// Blocking access to <see cref="IsRunning"/>.
-        /// </summary>
-        /// <remarks>
-        /// Synced via <see cref="_taskResourcesSemaphoreSlim"/>.
-        /// </remarks>
-        private bool IsRunningBlocking
-        {
-            get
-            {
-                _taskResourcesSemaphoreSlim.Wait();
-
-                try
-                {
-                    return IsRunning;
-                }
-                catch (ObjectDisposedException)
-                {
-                    return false;
-                }
-                finally
-                {
-                    _taskResourcesSemaphoreSlim.Release();
-                }
-            }
-        }
-
-        // The underlying indicator of disposal state.
-        private bool _disposed = false;
-
-        // ToDo: Consider throwing ObjectDisposedException where this member is accessed.
-        // ToDo: Consider change this to method.
-        private bool IsDisposedBlocking
-        {
-            get
-            {
-                try
-                {
-                    _disposedSemaphoreSlim.Wait();
-                }
-                catch (NullReferenceException)
-                {
-                    return true;
-                }
-                catch (ObjectDisposedException)
-                {
-                    return true;
-                }
-
-                try
-                {
-                    return _disposed;
-                }
-                finally
-                {
-                    _disposedSemaphoreSlim.Release();
-                }
-            }
         }
 
         /// <summary>
@@ -150,8 +92,8 @@ namespace TaskBasedBackgroundWorkers
             DebugEnter();
             
             _taskFactory = taskFactory ?? throw new ArgumentNullException(nameof(taskFactory));
-            _taskResourcesSemaphoreSlim = new SemaphoreSlim(1, 1);
-            _disposedSemaphoreSlim = new SemaphoreSlim(1, 1);
+            _taskResourcesMutex = new SemaphoreSlim(1, 1);
+            _disposedMutex = new SemaphoreSlim(1, 1);
 
             DebugExit();
         }
@@ -295,14 +237,12 @@ namespace TaskBasedBackgroundWorkers
                 throw new ArgumentException("Linked tokens cannot be empty.", nameof(linkedTokens));
             }
 
-            if (IsDisposedBlocking) 
+            if (_disposed) 
             {
                 return StartResult.None;
             }
 
-            _taskResourcesSemaphoreSlim.Wait();
-
-            try
+            using (ConcurrentHandle.EnterBlocking(_taskResourcesMutex))
             {
                 if (IsRunning)
                 {
@@ -319,10 +259,6 @@ namespace TaskBasedBackgroundWorkers
                 CreateAndStartTask(cts);
 
                 return StartResult.Ok;
-            }
-            finally
-            {
-                _taskResourcesSemaphoreSlim.Release();
             }
         }
 
@@ -356,22 +292,20 @@ namespace TaskBasedBackgroundWorkers
                 throw new ArgumentException("Linked tokens cannot be empty.", nameof(linkedTokens));
             }
 
-            if (IsDisposedBlocking)
+            if (_disposed)
             {
                 return StartResult.None;
             }
             
-            await _taskResourcesSemaphoreSlim.WaitAsync(cancellationToken);
-
-            try
+            using (await ConcurrentHandle.EnterBlockingAsync(_taskResourcesMutex))
             {
-                
                 if (IsRunning)
                 {
                     return StartResult.StopRequired;
                 }
 
                 var cts = CancellationTokenSource.CreateLinkedTokenSource(linkedTokens);
+                
                 if (cts.IsCancellationRequested)
                 {
                     cts.Dispose();
@@ -379,13 +313,9 @@ namespace TaskBasedBackgroundWorkers
                 }
 
                 CreateAndStartTask(cts);
+                
+                return StartResult.Ok;
             }
-            finally
-            {
-                _taskResourcesSemaphoreSlim.Release();
-            }
-
-            return StartResult.Ok;
         }
 
         // Setup of task and its associated resources.
@@ -416,7 +346,7 @@ namespace TaskBasedBackgroundWorkers
 
                 OnStopped(TaskWorkerStoppedEventArgs.Finished);
             }
-            catch (TaskCanceledException)
+            catch (OperationCanceledException)
             {
                 CleanupTaskResources();
 
@@ -438,26 +368,46 @@ namespace TaskBasedBackgroundWorkers
         /// <returns> A state that describes stop operation result. <see cref="StopResult.None"/> returns only when worker is already disposed. </returns>
         public StopResult Stop()
         {
-            if (IsDisposedBlocking)
+            if (_disposed)
             {
                 return StopResult.None;
             }
 
-            _taskResourcesSemaphoreSlim.Wait();
-
-            try
+            using (ConcurrentHandle.EnterBlocking(_taskResourcesMutex))
             {
                 if (!IsRunning)
                 {
                     return StopResult.StartRequired;
                 }
             }
-            finally
+
+            _cts.Cancel();
+
+            return StopResult.Ok;
+        }
+
+        /// <summary>
+        /// Sends cancellation signal that lead to stopping of worker and releasing of resources associeted with running task.
+        /// </summary>
+        /// <param name="ct"> Token that could be used to cancel operation. </param>
+        /// <returns> A state that describes stop operation result. <see cref="StopResult.None"/> returns only when worker is already disposed. </returns>
+        /// <remarks> Usually this method runs immediately but cancellation still can be used in case if it takes too much too run. </remarks>
+        public async Task<StopResult> StopAsync(CancellationToken ct = default)
+        {
+            if (_disposed)
             {
-                _taskResourcesSemaphoreSlim.Release();
+                return StopResult.None;
             }
 
-            _cts?.Cancel();
+            using (await ConcurrentHandle.EnterBlockingAsync(_taskResourcesMutex, ct))
+            {
+                if (!IsRunning)
+                {
+                    return StopResult.StartRequired;
+                }
+            }
+
+            _cts.Cancel();
 
             return StopResult.Ok;
         }
@@ -467,16 +417,10 @@ namespace TaskBasedBackgroundWorkers
         {
             DebugEnter();
 
-            _taskResourcesSemaphoreSlim.Wait();
-
-            try
+            using (ConcurrentHandle.EnterBlocking(_taskResourcesMutex))
             {
                 CleanupCTS();
                 CleanupTask();
-            }
-            finally
-            {
-                _taskResourcesSemaphoreSlim.Release();
             }
 
             DebugExit();
@@ -538,7 +482,7 @@ namespace TaskBasedBackgroundWorkers
         {
             DebugEnter();
 
-            _taskResourcesSemaphoreSlim.Dispose();
+            _taskResourcesMutex.Dispose();
 
             DebugExit();
         }
@@ -553,10 +497,8 @@ namespace TaskBasedBackgroundWorkers
             
             DebugEnter(callerName);
 
-            try
+            using (ConcurrentHandle.EnterBlocking(_disposedMutex))
             {
-                _disposedSemaphoreSlim.Wait();
-
                 if (_disposed)
                 {
                     Debug("Already disposed.");
@@ -565,12 +507,15 @@ namespace TaskBasedBackgroundWorkers
 
                 if (disposing)
                 {
-                    if (IsRunningBlocking)
+                    using (ConcurrentHandle.EnterBlocking(_taskResourcesMutex))
                     {
-                        Debug("Worker is running while disposing.");
-                        Debug("Performing auto-stop.");
-                        
-                        _cts?.Cancel();
+                        if (IsRunning)
+                        {
+                            Debug("Worker is running while disposing.");
+                            Debug("Performing auto-stop.");
+
+                            _cts.Cancel();
+                        }
                     }
 
                     CleanupEvents();
@@ -578,10 +523,6 @@ namespace TaskBasedBackgroundWorkers
                 }
 
                 _disposed = true;
-            }
-            finally
-            {
-                _disposedSemaphoreSlim.Dispose();
             }
 
             DebugExit(callerName);
