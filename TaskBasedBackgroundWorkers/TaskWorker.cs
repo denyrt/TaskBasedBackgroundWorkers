@@ -93,6 +93,10 @@ namespace TaskBasedBackgroundWorkers
                 {
                     _disposedSemaphoreSlim.Wait();
                 }
+                catch (NullReferenceException)
+                {
+                    return true;
+                }
                 catch (ObjectDisposedException)
                 {
                     return true;
@@ -313,6 +317,7 @@ namespace TaskBasedBackgroundWorkers
                 }
 
                 CreateAndStartTask(cts);
+
                 return StartResult.Ok;
             }
             finally
@@ -355,17 +360,23 @@ namespace TaskBasedBackgroundWorkers
             {
                 return StartResult.None;
             }
-
+            
             await _taskResourcesSemaphoreSlim.WaitAsync(cancellationToken);
 
             try
             {
+                
                 if (IsRunning)
                 {
                     return StartResult.StopRequired;
                 }
 
                 var cts = CancellationTokenSource.CreateLinkedTokenSource(linkedTokens);
+                if (cts.IsCancellationRequested)
+                {
+                    cts.Dispose();
+                    return StartResult.AlreadyCancelled;
+                }
 
                 CreateAndStartTask(cts);
             }
@@ -375,36 +386,6 @@ namespace TaskBasedBackgroundWorkers
             }
 
             return StartResult.Ok;
-        }
-
-        /// <summary>
-        /// Sends cancellation signal that lead to stopping of worker and releasing of resources associeted with running task.
-        /// </summary>
-        /// <returns> A state that describes stop operation result. <see cref="StopResult.None"/> returns only when worker is already disposed. </returns>
-        public StopResult Stop()
-        {
-            if (IsDisposedBlocking)
-            {
-                return StopResult.None;
-            }
-
-            _taskResourcesSemaphoreSlim.Wait();
-
-            try
-            {
-                if (!IsRunning)
-                {
-                    return StopResult.StartRequired;
-                }
-            }
-            finally 
-            {
-                _taskResourcesSemaphoreSlim.Release(); 
-            }
-
-            _cts?.Cancel();
-
-            return StopResult.Ok;
         }
 
         // Setup of task and its associated resources.
@@ -451,6 +432,56 @@ namespace TaskBasedBackgroundWorkers
             }
         }
 
+        /// <summary>
+        /// Sends cancellation signal that lead to stopping of worker and releasing of resources associeted with running task.
+        /// </summary>
+        /// <returns> A state that describes stop operation result. <see cref="StopResult.None"/> returns only when worker is already disposed. </returns>
+        public StopResult Stop()
+        {
+            if (IsDisposedBlocking)
+            {
+                return StopResult.None;
+            }
+
+            _taskResourcesSemaphoreSlim.Wait();
+
+            try
+            {
+                if (!IsRunning)
+                {
+                    return StopResult.StartRequired;
+                }
+            }
+            finally
+            {
+                _taskResourcesSemaphoreSlim.Release();
+            }
+
+            _cts?.Cancel();
+
+            return StopResult.Ok;
+        }
+
+        // Organized clean-up of task associated resources.
+        private void CleanupTaskResources()
+        {
+            DebugEnter();
+
+            _taskResourcesSemaphoreSlim.Wait();
+
+            try
+            {
+                CleanupCTS();
+                CleanupTask();
+            }
+            finally
+            {
+                _taskResourcesSemaphoreSlim.Release();
+            }
+
+            DebugExit();
+        }
+
         // Clean-up underlying cancellation source.
         private void CleanupCTS()
         {
@@ -484,26 +515,6 @@ namespace TaskBasedBackgroundWorkers
                 }
 
                 _task = null;
-            }
-
-            DebugExit();
-        }
-
-        // Organized clean-up of task associated resources.
-        private void CleanupTaskResources()
-        {
-            DebugEnter();
-
-            try
-            {
-                _taskResourcesSemaphoreSlim.Wait();
-
-                CleanupCTS();
-                CleanupTask();
-            }
-            finally
-            {
-                _taskResourcesSemaphoreSlim.Release();
             }
 
             DebugExit();
@@ -570,7 +581,6 @@ namespace TaskBasedBackgroundWorkers
             }
             finally
             {
-                _disposedSemaphoreSlim.Release();
                 _disposedSemaphoreSlim.Dispose();
             }
 

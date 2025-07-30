@@ -46,7 +46,9 @@ namespace TaskBasedBackgroundWorkers.Examples.LongRunningLoop
             {
                 await Task.Delay(delay).ConfigureAwait(false);
 
-                ConsoleExtensions.WriteLineTimestamped($"(hash: {worker.GetHashCode()}) <{nameof(worker.Start)}> called [start = {worker.Start()}]");
+                StartResult start = worker.Start();
+
+                ConsoleExtensions.WriteLineTimestamped($"(hash: {worker.GetHashCode()}) <{nameof(worker.Start)}> called [start = {start}]");
             }
             catch (Exception ex)
             {
@@ -60,11 +62,13 @@ namespace TaskBasedBackgroundWorkers.Examples.LongRunningLoop
             {
                 await Task.Delay(delay).ConfigureAwait(false);
 
-                ConsoleExtensions.WriteLineTimestamped($"(hash: {worker.GetHashCode()}) <{nameof(worker.Stop)}> called [stop = {worker.Stop()}]");
+                StopResult stop = worker.Stop();
+
+                ConsoleExtensions.WriteLineTimestamped($"(hash: {worker.GetHashCode()}) <{nameof(worker.Stop)}> called [stop = {stop}]");
             }
             catch (Exception ex)
             {
-                ConsoleExtensions.WriteLineTimestamped($"(hash: {worker.GetHashCode()}) <{nameof(worker.Stop)}> {ex.Message}");
+                ConsoleExtensions.WriteLineTimestamped($"(hash: {worker.GetHashCode()}) <{nameof(worker.Stop)}> {ex.Message} \n {ex.StackTrace}");
             }
         }
     }
