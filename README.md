@@ -21,6 +21,7 @@ A few main purposes that this object could fulfill:
 | _Thread-Safety_       | <ul><li>- [x] </li></ul>        |
 | _Life-Time Events_    | <ul><li>- [x] </li></ul>        |
 | _Progress Tracking_   | <ul><li>- [x] </li></ul>        |
+| _`ConcurrentHandle `_ | <ul><li>- [x] </li></ul>        |
 | _`RelayWorker`_       | <ul><li>- [ ] </li></ul>        |
 | _`WorkerScheldure`_   | <ul><li>- [ ] </li></ul>        |
 | _Fluent API_          | <ul><li>- [ ] </li></ul>        |
@@ -35,9 +36,9 @@ Worker is thread-safe in context of management its exection.
 
 The are main points that are synchronized:
 
-- Starting
-- Stopping
-- Cancellation by external token
+- _Starting_
+- _Stopping/Cancellation_
+- _Disposing_
 
 Each of listed scenarios uses concurrent synchronization so only one of them could be performed at one moment of time
 that keeps underlying state always valid.
@@ -50,3 +51,51 @@ Worker exposes next events:
 - `Stopped`
 - `ProgressChanged`
 - `ExceptionThrown`
+
+### _Progress Tracking_
+
+Method `DoWorkAsync` provides `IProgress<T>` to report changes. `ProgressChanged` will be raised for each report.
+
+#### Example
+
+```
+    public sealed class CustomWorker : TaskWorker<int>
+    {
+        public SingleActionWorker(TaskFactory taskFactory) : base(taskFactory)
+        {
+        }
+
+        protected override async Task DoWorkAsync(IProgress<int> progress, CancellationToken cancellationToken)
+        {
+            // Triggers `ProgressChanged` event using `1000` as value for event args.
+            progress.Report(1000); 
+        }
+    }
+```
+
+_A support for custom `IProgress<T>` not available but considered for later (low-prior task)_
+
+### _ConcurrentHandle_
+
+`ConcurrentHandle` is cool tool that makes code a bit cleaner when working with `SemaphoreSlim`.
+It allows use `using` statement instead of `try/finally` that could be very enjoyable when working with a few semaphores.
+
+#### Example
+
+```
+    
+    SemaphoreSlim       semaphore   = SomeObject.Semaphore;
+    TimeSpan            timeout     = TimeSpan.FromSeconds(2); // optional
+    CancellationToken   token       = CancellationToken.None; // optional
+
+    using (var handle = ConcurrentHandle.EnterBlocking(semaphore, timeout, token))
+    {
+        // IsEntered is false when timeout expires so task handle not in sync scope
+        if (handle.IsEntered) 
+        {
+            // Do something
+        }
+    }
+
+    // Here underlying semaphore is realised if IsEntered is true
+```
