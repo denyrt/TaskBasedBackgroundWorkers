@@ -6,7 +6,7 @@ namespace TaskBasedBackgroundWorkers.Examples.LongRunningLoop
 {
     public sealed class LoopWorker : TaskWorker<int>
     {
-        public LoopWorker() : base(TaskScheduler.Default, TaskCreationOptions.LongRunning)
+        public LoopWorker(TaskFactory taskFactory) : base(taskFactory)
         {            
         }
 
