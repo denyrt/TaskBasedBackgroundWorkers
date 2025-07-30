@@ -79,6 +79,7 @@ _A support for custom `IProgress<T>` not available but considered for later (low
 
 `ConcurrentHandle` is cool tool that makes code a bit cleaner when working with `SemaphoreSlim`.
 It allows use `using` statement instead of `try/finally` that could be very enjoyable when working with a few semaphores.
+There are both _sync_ and _async_ API available.
 
 #### Example
 
@@ -90,10 +91,11 @@ It allows use `using` statement instead of `try/finally` that could be very enjo
 
     using (var handle = ConcurrentHandle.EnterBlocking(semaphore, timeout, token))
     {
-        // IsEntered is false when timeout expires so task handle not in sync scope
+        // If IsEntered is true then current execution is synchronized with semaphore.
+        // IsEntered could be false if timeout parameter specified.
         if (handle.IsEntered) 
         {
-            // Do something
+            // Do something 
         }
     }
 
