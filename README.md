@@ -78,7 +78,8 @@ _A support for custom `IProgress<T>` not available but considered for later (low
 ### _ConcurrentHandle_
 
 `ConcurrentHandle` is cool tool that makes code a bit cleaner when working with `SemaphoreSlim`.
-It allows use `using` statement instead of `try/finally` that could be very enjoyable when working with a few semaphores.
+It allows replace `try/finally` statement with `using` that could be very enjoyable when working with a few semaphores.
+
 There are both _sync_ and _async_ API available.
 
 #### Example
