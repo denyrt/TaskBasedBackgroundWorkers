@@ -46,7 +46,8 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Concurrency\ConcurrentHandle.cs" />
+    <Compile Include="Concurrency\SemaphoreSlimHandle.cs" />
+    <Compile Include="Concurrency\SemaphoreSlimHandleExtensions.cs" />
     <Compile Include="Helpers\TaskHelper.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="StartResult.cs" />
