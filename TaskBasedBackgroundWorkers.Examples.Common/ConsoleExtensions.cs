@@ -11,7 +11,7 @@ namespace TaskBasedBackgroundWorkers.Examples.Common
 
         public static void WriteLineTimestamped(FormattableString message)
         {
-            using (var handle = ConcurrentHandle.EnterBlocking(_semaphore))
+            using (var handle = SemaphoreSlimHandle.EnterBlocking(_semaphore))
             {
                 Console.Out.WriteLine(TimestampedMessage(message).ToString());
             }
@@ -19,7 +19,7 @@ namespace TaskBasedBackgroundWorkers.Examples.Common
 
         public static async Task WriteLineTimestampedAsync(FormattableString message)
         {
-            using (var handle = await ConcurrentHandle.EnterBlockingAsync(_semaphore))
+            using (var handle = await SemaphoreSlimHandle.EnterBlockingAsync(_semaphore))
             {
                 await Console.Out.WriteLineAsync(TimestampedMessage(message).ToString());
             }

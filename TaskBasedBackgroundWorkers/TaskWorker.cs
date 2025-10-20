@@ -85,13 +85,17 @@ namespace TaskBasedBackgroundWorkers
         /// Initializes new instance of <see cref="TaskWorker{TProgress}"/> with custom <see cref="TaskFactory"/> and <see cref="TaskCreationOptions"/>.
         /// </summary>
         /// <param name="taskFactory"> Task factory that will be used to create tasks for worker. </param>
-        /// <param name="taskCreationOptions"> Options that will be used to run worker. </param>
         /// <exception cref="ArgumentNullException"></exception>
         public TaskWorker(TaskFactory taskFactory)
         {
             DebugEnter();
-            
-            _taskFactory = taskFactory ?? throw new ArgumentNullException(nameof(taskFactory));
+
+            if (taskFactory == null)
+            {
+                throw new ArgumentNullException(nameof(taskFactory));
+            }
+
+            _taskFactory = taskFactory;
             _taskResourcesMutex = new SemaphoreSlim(1, 1);
             _disposedMutex = new SemaphoreSlim(1, 1);
 
@@ -174,7 +178,7 @@ namespace TaskBasedBackgroundWorkers
         public StartResult Start(CancellationToken linkedToken = default)
         {
             var tokens = new CancellationToken[1] { linkedToken };
-            
+
             try
             {
                 return Start(tokens);
@@ -237,12 +241,12 @@ namespace TaskBasedBackgroundWorkers
                 throw new ArgumentException("Linked tokens cannot be empty.", nameof(linkedTokens));
             }
 
-            if (_disposed) 
+            if (_disposed)
             {
                 return StartResult.None;
             }
 
-            using (ConcurrentHandle.EnterBlocking(_taskResourcesMutex))
+            using (SemaphoreSlimHandle.EnterBlocking(_taskResourcesMutex))
             {
                 if (IsRunning)
                 {
@@ -268,7 +272,7 @@ namespace TaskBasedBackgroundWorkers
         /// <param name="linkedTokens">
         /// A bunch of bound cancellation tokens. Cancellation request from one of these tokens will lead to stop of current worker. 
         /// </param>
-        /// <param name="cancellationToken"> 
+        /// <param name="ct"> 
         /// Cancellation token that could be used to cancel starting of worker. 
         /// </param>
         /// <exception cref="ArgumentException"></exception>
@@ -285,7 +289,7 @@ namespace TaskBasedBackgroundWorkers
         /// </list>
         /// </remarks>
         /// <returns> A state that describes start operation result. </returns>
-        public async Task<StartResult> StartAsync(CancellationToken[] linkedTokens, CancellationToken cancellationToken = default)
+        public async Task<StartResult> StartAsync(CancellationToken[] linkedTokens, CancellationToken ct = default)
         {
             if (linkedTokens.Length == 0)
             {
@@ -296,8 +300,8 @@ namespace TaskBasedBackgroundWorkers
             {
                 return StartResult.None;
             }
-            
-            using (await ConcurrentHandle.EnterBlockingAsync(_taskResourcesMutex))
+
+            using (await _taskResourcesMutex.EnterBlockingAsync(ct).ConfigureAwait(false))
             {
                 if (IsRunning)
                 {
@@ -305,7 +309,7 @@ namespace TaskBasedBackgroundWorkers
                 }
 
                 var cts = CancellationTokenSource.CreateLinkedTokenSource(linkedTokens);
-                
+
                 if (cts.IsCancellationRequested)
                 {
                     cts.Dispose();
@@ -313,7 +317,7 @@ namespace TaskBasedBackgroundWorkers
                 }
 
                 CreateAndStartTask(cts);
-                
+
                 return StartResult.Ok;
             }
         }
@@ -322,12 +326,15 @@ namespace TaskBasedBackgroundWorkers
         private void CreateAndStartTask(CancellationTokenSource cts)
         {
             _cts = cts;
-
             var ct = _cts.Token;
 
-            var func = new Action<CancellationToken>(async (token) => await ExecuteDoWorkAsync(token));
-
-            _task = _taskFactory.StartNew(() => func(ct));
+            _task = _taskFactory
+                .StartNew(
+                    async () => await ExecuteDoWorkAsync(ct).ConfigureAwait(false),
+                    ct,
+                    _taskFactory.CreationOptions,
+                    _taskFactory.Scheduler ?? TaskScheduler.Default)
+                .Unwrap();
         }
 
         // A method that is passed to underlying task on its creation.
@@ -348,17 +355,26 @@ namespace TaskBasedBackgroundWorkers
             }
             catch (OperationCanceledException)
             {
-                CleanupTaskResources();
-
-                OnStopped(TaskWorkerStoppedEventArgs.Cancelled);
+                try
+                {
+                    CleanupTaskResources();
+                }
+                finally
+                {
+                    OnStopped(TaskWorkerStoppedEventArgs.Cancelled);
+                }
             }
             catch (Exception ex)
             {
-                CleanupTaskResources();
-
-                OnExceptionThrown(new TaskWorkerExceptionEventArgs(ex));
-
-                OnStopped(TaskWorkerStoppedEventArgs.Exception);
+                try
+                {
+                    CleanupTaskResources();
+                }
+                finally
+                {
+                    OnExceptionThrown(new TaskWorkerExceptionEventArgs(ex));
+                    OnStopped(TaskWorkerStoppedEventArgs.Exception);
+                }
             }
         }
 
@@ -373,15 +389,18 @@ namespace TaskBasedBackgroundWorkers
                 return StopResult.None;
             }
 
-            using (ConcurrentHandle.EnterBlocking(_taskResourcesMutex))
+            CancellationTokenSource cts;
+            using (_taskResourcesMutex.EnterBlocking())
             {
                 if (!IsRunning)
                 {
                     return StopResult.StartRequired;
                 }
+
+                cts = _cts;
             }
 
-            _cts.Cancel();
+            cts.Cancel();
 
             return StopResult.Ok;
         }
@@ -399,15 +418,18 @@ namespace TaskBasedBackgroundWorkers
                 return StopResult.None;
             }
 
-            using (await ConcurrentHandle.EnterBlockingAsync(_taskResourcesMutex, ct))
+            CancellationTokenSource cts;
+            using (await _taskResourcesMutex.EnterBlockingAsync(ct).ConfigureAwait(false))
             {
                 if (!IsRunning)
                 {
                     return StopResult.StartRequired;
                 }
+
+                cts = _cts;
             }
 
-            _cts.Cancel();
+            cts.Cancel();
 
             return StopResult.Ok;
         }
@@ -417,7 +439,7 @@ namespace TaskBasedBackgroundWorkers
         {
             DebugEnter();
 
-            using (ConcurrentHandle.EnterBlocking(_taskResourcesMutex))
+            using (_taskResourcesMutex.EnterBlocking())
             {
                 CleanupCTS();
                 CleanupTask();
@@ -451,7 +473,7 @@ namespace TaskBasedBackgroundWorkers
             {
                 Debug($"{nameof(_task)} is not null.");
 
-                if (Helpers.TaskHelper.IsCouldBeDisposed(_task))
+                if (_task.IsCompleted)
                 {
                     Debug($"Disposing {nameof(_task)}.");
 
@@ -494,10 +516,10 @@ namespace TaskBasedBackgroundWorkers
         protected virtual void Dispose(bool disposing)
         {
             string callerName = $"{nameof(Dispose)}({nameof(disposing)}={disposing})";
-            
+
             DebugEnter(callerName);
 
-            using (ConcurrentHandle.EnterBlocking(_disposedMutex))
+            using (_disposedMutex.EnterBlocking())
             {
                 if (_disposed)
                 {
@@ -507,7 +529,7 @@ namespace TaskBasedBackgroundWorkers
 
                 if (disposing)
                 {
-                    using (ConcurrentHandle.EnterBlocking(_taskResourcesMutex))
+                    using (_taskResourcesMutex.EnterBlocking())
                     {
                         if (IsRunning)
                         {
